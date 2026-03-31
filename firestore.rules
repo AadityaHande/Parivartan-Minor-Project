@@ -1,0 +1,47 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Users collection - read allowed for all, write requires auth
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Reports collection - read allowed for all, write requires auth
+    match /reports/{reportId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Departments collection - read allowed for all
+    match /departments/{departmentId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Settings/config collection
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Notifications collection - read allowed for all
+    match /notifications/{notificationId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+    
+    // Fallback: allow read for all, write for authenticated
+    match /{document=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+  }
+}
