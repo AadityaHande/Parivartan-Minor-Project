@@ -5,13 +5,19 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { firebaseConfig } from './config';
 
+const runtimeProjectId =
+  process.env.FIREBASE_PROJECT_ID ||
+  process.env.GOOGLE_CLOUD_PROJECT ||
+  process.env.GCLOUD_PROJECT ||
+  firebaseConfig.projectId;
+
 // This is a temporary solution for service account credentials.
 // In a real production environment, you should use environment variables
 // or another secure method to store these credentials.
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_KEY
   ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
   : {
-      projectId: firebaseConfig.projectId,
+      projectId: runtimeProjectId,
       // You would typically not hard-code a private key.
       // This is a placeholder.
       privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
@@ -22,7 +28,8 @@ let adminApp: App;
 
 const hasPlaceholderCredentials =
   String(serviceAccount.clientEmail || '').includes('your-client-email') ||
-  String(serviceAccount.privateKey || '').includes('YOUR_PRIVATE_KEY_HERE');
+  String(serviceAccount.privateKey || '').includes('YOUR_PRIVATE_KEY_HERE') ||
+  String(serviceAccount.projectId || '').includes('your-project');
 
 if (!getApps().length) {
   const hasExplicitCredentials =
@@ -30,6 +37,12 @@ if (!getApps().length) {
     !!serviceAccount.clientEmail &&
     !!serviceAccount.privateKey &&
     !hasPlaceholderCredentials;
+
+  if (!hasExplicitCredentials && process.env.NODE_ENV !== 'production') {
+    throw new Error(
+      'Firebase Admin credentials are missing for server routes. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY (or FIREBASE_SERVICE_ACCOUNT_KEY JSON).'
+    );
+  }
 
   adminApp = initializeApp(
     hasExplicitCredentials
@@ -41,6 +54,7 @@ if (!getApps().length) {
           }),
         }
       : {
+          projectId: runtimeProjectId,
           // Fall back to the hosting/runtime identity when explicit credentials are not set.
         }
   );

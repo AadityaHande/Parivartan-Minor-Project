@@ -6,6 +6,7 @@ import { FirebaseClientProvider } from '@/firebase';
 import { PWARegister } from '@/components/pwa-register';
 import { PWAInstallPrompt } from '@/components/pwa-install-prompt';
 import { OfflineIndicator } from '@/components/offline-indicator';
+import { LightModeEnforcer } from '@/components/light-mode-enforcer';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
@@ -27,7 +28,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#7c3aed',
+  themeColor: '#f8fafc',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -49,7 +50,8 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-      <body className={inter.variable}>
+      <body className={`${inter.variable} bg-slate-50 text-slate-900 antialiased`} style={{ colorScheme: 'light' }}>
+        <LightModeEnforcer />
         <PWARegister />
         <FirebaseClientProvider>
           <PWAInstallPrompt />

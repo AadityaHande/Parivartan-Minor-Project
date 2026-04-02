@@ -19,6 +19,10 @@ export type User = {
   points: number;
   departmentId?: string; // For workers and department heads
   department?: string; // Department name for quick access
+  designation?: string;
+  skillType?: 'Garbage' | 'Road Repair' | 'Electrical' | string;
+  assignedContractor?: string;
+  wardArea?: string;
   employeeId?: string;
   createdAt?: string;
 };
@@ -91,6 +95,7 @@ export type Notification = {
   id: string;
   title: string;
   description: string;
+  userId?: string;
   imageUrl?: string;
   location?: string;
   locationLink?: string;

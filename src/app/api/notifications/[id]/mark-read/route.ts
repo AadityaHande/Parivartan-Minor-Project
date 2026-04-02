@@ -1,20 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { initializeApp, cert, getApps } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-
-// Initialize Firebase Admin
-const firebaseAdminApp = getApps().length === 0
-  ? initializeApp({
-      credential: cert({
-        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-      }),
-      databaseURL: `https://${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebaseio.com`,
-    })
-  : getApps()[0];
-
-const firestoreAdmin = getFirestore(firebaseAdminApp);
+import { getFirebaseAdmin } from '@/firebase/server';
 
 /**
  * PATCH /api/notifications/[id]/mark-read
@@ -25,6 +10,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
+    const { firestore } = await getFirebaseAdmin();
     const { id } = params;
 
     if (!id) {
@@ -34,7 +20,7 @@ export async function PATCH(
       );
     }
 
-    await firestoreAdmin.collection('notifications').doc(id).update({
+    await firestore.collection('notifications').doc(id).update({
       isRead: true,
     });
 

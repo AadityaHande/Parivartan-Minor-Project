@@ -49,6 +49,8 @@ const problemCategories = [
   'Crack',
   'Surface failure',
   'Water-logged damage',
+  'Garbage/Debris',
+  'Streetlight Issue',
   'None',
 ];
 
@@ -72,6 +74,8 @@ export default function ReportProblemPage() {
   const [showCamera, setShowCamera] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [cachedAiAnalysis, setCachedAiAnalysis] = useState<AIAnalysis | null>(null);
+  const [cachedAiPhoto, setCachedAiPhoto] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -90,16 +94,51 @@ export default function ReportProblemPage() {
     },
   });
 
+  const compressImageDataUrl = useCallback((sourceDataUrl: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const maxDimension = 1536;
+        const scale = Math.min(maxDimension / img.width, maxDimension / img.height, 1);
+        const width = Math.max(1, Math.round(img.width * scale));
+        const height = Math.max(1, Math.round(img.height * scale));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        if (!ctx) {
+          reject(new Error('Failed to compress image.'));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => reject(new Error('Failed to load image for compression.'));
+      img.src = sourceDataUrl;
+    });
+  }, []);
+
+  const normalizeCategory = useCallback((rawCategory: string): string => {
+    const normalized = rawCategory.trim().toLowerCase();
+    const match = problemCategories.find(c => c.toLowerCase() === normalized);
+    return match || 'None';
+  }, []);
+
   const runAiAnalysis = useCallback(async (imageDataUrl: string) => {
     setIsAnalyzing(true);
     try {
         const result = await aiDamageAssessment({ mediaDataUri: imageDataUrl });
-        if (result.damageCategory && problemCategories.includes(result.damageCategory)) {
-          form.setValue('category', result.damageCategory);
-        }
+        const normalizedCategory = normalizeCategory(result.damageCategory || 'None');
+        form.setValue('category', normalizedCategory);
         if (result.description) {
           form.setValue('description', result.description);
         }
+        setCachedAiAnalysis(result);
+        setCachedAiPhoto(imageDataUrl);
+
         // Add suggested location details to description if no custom location is set
         if (result.suggestedLocationDetails && !form.getValues('location')) {
           const currentDescription = form.getValues('description');
@@ -110,7 +149,11 @@ export default function ReportProblemPage() {
         }
         
         // Show different toast messages based on analysis type
-        if (result.damageDetected === false && result.damageCategory === 'None') {
+        const isServiceFallback =
+          result.description.includes('Unable to analyze image at this time due to service limits') ||
+          result.description.includes('AI analysis is temporarily unavailable due to key or permission settings');
+
+        if (isServiceFallback) {
           toast({
             title: 'Analysis Complete',
             description: 'Service is currently busy. Please fill in the form details manually.',
@@ -124,6 +167,8 @@ export default function ReportProblemPage() {
         }
     } catch (e) {
         console.error("AI analysis failed during form fill:", e);
+        setCachedAiAnalysis(null);
+        setCachedAiPhoto(null);
         const errorMessage = (e as any)?.message?.includes('429') 
           ? 'AI service is currently at capacity. Please fill the form manually.'
           : 'Could not analyze the image. Please fill the form manually.';
@@ -136,7 +181,7 @@ export default function ReportProblemPage() {
     } finally {
         setIsAnalyzing(false);
     }
-  }, [form, toast]);
+  }, [form, normalizeCategory, toast]);
 
 
   useEffect(() => {
@@ -169,7 +214,7 @@ export default function ReportProblemPage() {
     }
   }, [showCamera, toast]);
   
-  const handleCapture = () => {
+  const handleCapture = async () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -179,11 +224,26 @@ export default function ReportProblemPage() {
       if (context) {
         context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
         const dataUrl = canvas.toDataURL('image/jpeg');
-        setCapturedImage(dataUrl);
-        form.setValue('photo', dataUrl);
-        form.clearErrors('photo');
         setShowCamera(false);
-        runAiAnalysis(dataUrl); // Trigger AI analysis
+
+        try {
+          const compressedImage = await compressImageDataUrl(dataUrl);
+          setCapturedImage(compressedImage);
+          setCachedAiAnalysis(null);
+          setCachedAiPhoto(null);
+          form.setValue('photo', compressedImage);
+          form.clearErrors('photo');
+          runAiAnalysis(compressedImage); // Trigger AI analysis with compressed image
+        } catch (error) {
+          console.error('Image compression failed, using original image:', error);
+          setCapturedImage(dataUrl);
+          setCachedAiAnalysis(null);
+          setCachedAiPhoto(null);
+          form.setValue('photo', dataUrl);
+          form.clearErrors('photo');
+          runAiAnalysis(dataUrl);
+        }
+
         handleGetLocationInternal(); // Auto geo-tag after image capture
       }
     }
@@ -257,11 +317,16 @@ export default function ReportProblemPage() {
         });
 
         let aiAnalysis: AIAnalysis | null = null;
-        try {
+        const canUseCachedAnalysis = !!cachedAiAnalysis && cachedAiPhoto === values.photo;
+        if (canUseCachedAnalysis) {
+          aiAnalysis = cachedAiAnalysis;
+        } else {
+          try {
             aiAnalysis = await aiDamageAssessment({ mediaDataUri: values.photo });
-        } catch (e) {
+          } catch (e) {
             console.error('AI analysis failed, continuing without it:', e);
             aiAnalysis = null; // Use null instead of undefined for Firebase
+          }
         }
 
         // Step 2: Run automated workflow analysis
@@ -273,10 +338,10 @@ export default function ReportProblemPage() {
             longitude: values.longitude,
         };
 
-        const workflow = analyzeReportForWorkflow(reportData, aiAnalysis);
+        const workflow = analyzeReportForWorkflow(reportData, aiAnalysis ?? undefined);
         const initialStatus = getInitialStatus(workflow);
         const automationConfidence = calculateAutomationConfidence(
-            aiAnalysis, 
+          aiAnalysis ?? undefined, 
             !!values.photo, 
             !!(values.latitude && values.longitude)
         );
@@ -353,17 +418,17 @@ export default function ReportProblemPage() {
   }
 
   return (
-    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-      <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6 md:p-8 rounded-lg shadow-lg mb-8">
-        <h1 className="text-3xl md:text-4xl font-bold mb-2">Report a Problem</h1>
-        <p className="text-base md:text-lg">Empower Your Voice with Visual Evidence</p>
+    <div className="flex-1 space-y-4 p-4 pt-6 md:p-8">
+      <div className="mb-8 rounded-2xl border border-slate-200 bg-slate-950 p-6 text-white shadow-lg dark:border-slate-800 dark:bg-slate-900 md:p-8">
+        <h1 className="mb-2 text-3xl font-bold md:text-4xl">Report a Problem</h1>
+        <p className="text-base text-slate-200 md:text-lg">Empower your voice with visual evidence</p>
       </div>
 
-      <Card>
-        <CardHeader>
+      <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+        <CardHeader className="border-b border-slate-100 dark:border-slate-800">
           <CardTitle>Submit a New Report</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
               <FormField
@@ -398,6 +463,8 @@ export default function ReportProblemPage() {
                                 className="absolute top-1 right-1"
                                 onClick={() => {
                                   setCapturedImage(null);
+                                  setCachedAiAnalysis(null);
+                                  setCachedAiPhoto(null);
                                   form.setValue('photo', '');
                                 }}
                               >
@@ -416,13 +483,13 @@ export default function ReportProblemPage() {
               />
 
               {showCamera && (
-                <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4">
-                  <Card className="w-full max-w-2xl">
-                    <CardHeader>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+                  <Card className="w-full max-w-2xl border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+                    <CardHeader className="border-b border-slate-100 dark:border-slate-800">
                       <CardTitle>Live Camera</CardTitle>
                     </CardHeader>
                     <CardContent className="flex flex-col items-center gap-4">
-                        <video ref={videoRef} className="w-full aspect-video rounded-md bg-muted" autoPlay muted playsInline />
+                        <video ref={videoRef} className="w-full aspect-video rounded-md bg-slate-100 dark:bg-slate-900" autoPlay muted playsInline />
                          {hasCameraPermission === false && (
                             <Alert variant="destructive">
                                 <AlertTriangle className="h-4 w-4" />
@@ -448,7 +515,7 @@ export default function ReportProblemPage() {
                 
               <div className='relative'>
                 {isAnalyzing && (
-                    <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 rounded-md">
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-md bg-background/85 backdrop-blur-sm">
                         <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
                         <p className="text-sm font-medium text-muted-foreground">AI is analyzing your image...</p>
                     </div>

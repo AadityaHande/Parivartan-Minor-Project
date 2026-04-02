@@ -19,7 +19,7 @@ import Image from 'next/image';
 import { MapPin, User, Calendar, Bot, Loader2, Shield, AlertTriangle, Sparkles } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { useDoc, useMemoFirebase, useUser } from '@/firebase';
-import { doc, DocumentData, DocumentReference, updateDoc, arrayUnion, increment } from 'firebase/firestore';
+import { collection, doc, DocumentData, DocumentReference, updateDoc, arrayUnion, increment, getDocs, query, where, addDoc, getDoc } from 'firebase/firestore';
 import { useFirestore } from '@/firebase/provider';
 import type { Report, ReportStatus, AIAnalysis } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -204,6 +204,50 @@ export default function SmcComplaintDetailPage() {
         }
 
         await updateDoc(reportRef, updatePayload);
+
+                        if (values.status === 'Resolved' && report.status !== 'Resolved') {
+                                const resolvedReportsSnapshot = await getDocs(
+                                    query(
+                                        collection(firestore, 'reports'),
+                                        where('userId', '==', report.userId),
+                                        where('status', '==', 'Resolved')
+                                    )
+                                );
+
+                                const resolvedReports = resolvedReportsSnapshot.docs.map((reportDoc) => reportDoc.data() as Report);
+                                const qualifiedCount = resolvedReports.filter((item) => isGenuineResolvedReport(item)).length + 1;
+                                const rewardOffer = getRewardOffer(qualifiedCount);
+
+                                if (rewardOffer) {
+                                    const prizeMessage = buildRewardNotificationText(rewardOffer);
+                                    await addDoc(collection(firestore, 'notifications'), {
+                                        title: rewardOffer.title,
+                                        description: `${prizeMessage} Tap the dashboard to claim it.`,
+                                        createdAt: new Date().toISOString(),
+                                        createdBy: user?.displayName || 'System',
+                                        type: 'general',
+                                        isRead: false,
+                                        userId: report.userId,
+                                    });
+
+                                    try {
+                                        const userSnapshot = await getDoc(doc(firestore, 'users', report.userId));
+                                        const phoneNumber = userSnapshot.data()?.phoneNumber;
+                                        if (phoneNumber) {
+                                            await fetch('/api/auth/send-sms', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                    phoneNumber,
+                                                    message: `${prizeMessage} Claim via Parivartan dashboard.`,
+                                                }),
+                                            });
+                                        }
+                                    } catch (smsError) {
+                                        console.error('Reward SMS failed:', smsError);
+                                    }
+                                }
+                        }
         
         toast({
             title: 'Report Updated',

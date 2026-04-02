@@ -2,19 +2,17 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
-import { MapPin, User, Calendar, Star, Check, X, Bot, Shield, Loader2 } from 'lucide-react';
+import { MapPin, User, Calendar, Bot, Shield } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useDoc, useMemoFirebase } from '@/firebase';
-import { doc, DocumentData, DocumentReference, updateDoc } from 'firebase/firestore';
+import { doc, DocumentData, DocumentReference } from 'firebase/firestore';
 import { useFirestore } from '@/firebase/provider';
 import type { Report } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useState, useEffect } from 'react';
-import { useToast } from '@/hooks/use-toast';
 
 const statusColors: { [key: string]: string } = {
     Submitted: 'bg-blue-500',
@@ -39,7 +37,6 @@ const allStages = ['Submitted', 'Under Verification', 'Assigned', 'In Progress',
 export default function ComplaintDetailPage() {
   const params = useParams<{ id: string }>();
   const firestore = useFirestore();
-  const { toast } = useToast();
 
   const reportRef = useMemoFirebase(() => {
     if (!firestore || !params.id) return null;
@@ -47,37 +44,6 @@ export default function ComplaintDetailPage() {
   }, [firestore, params.id]);
 
   const { data: report, isLoading } = useDoc<Report>(reportRef);
-  const [rating, setRating] = useState(0);
-  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
-
-  useEffect(() => {
-    if (report?.citizenRating) {
-      setRating(report.citizenRating);
-    }
-  }, [report]);
-  
-  const handleRating = async (newRating: number) => {
-    if (!reportRef) return;
-    setIsSubmittingRating(true);
-    try {
-        await updateDoc(reportRef, { citizenRating: newRating });
-        setRating(newRating);
-        toast({
-            title: "Feedback Submitted",
-            description: `You rated this resolution ${newRating} out of 5 stars.`
-        });
-    } catch (error) {
-        console.error("Failed to submit rating", error);
-        toast({
-            variant: "destructive",
-            title: "Submission Failed",
-            description: "Could not submit your rating. Please try again."
-        });
-    } finally {
-        setIsSubmittingRating(false);
-    }
-  }
-
   if (isLoading) {
     return (
         <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
@@ -118,9 +84,9 @@ export default function ComplaintDetailPage() {
 
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-       <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-6 md:p-8 rounded-lg shadow-lg mb-8">
-        <h1 className="text-3xl md:text-4xl font-bold mb-2">Complaint Details</h1>
-        <p className="text-base md:text-lg font-mono">{params.id}</p>
+             <div className="mb-8 rounded-2xl border border-slate-200 bg-slate-950 p-6 text-white shadow-lg dark:border-slate-800 dark:bg-slate-900 md:p-8">
+                <h1 className="mb-2 text-3xl font-bold md:text-4xl">Complaint Details</h1>
+                <p className="font-mono text-base text-slate-200 md:text-lg">{params.id}</p>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-3">
@@ -253,28 +219,20 @@ export default function ComplaintDetailPage() {
                 </CardContent>
             </Card>
 
-             <Card>
-                <CardHeader><CardTitle>Provide Feedback</CardTitle></CardHeader>
-                <CardContent className="text-center">
-                    {report.status === 'Resolved' ? (
-                        <div className="space-y-2">
-                             <p className="text-sm text-muted-foreground">How would you rate the resolution?</p>
-                             {isSubmittingRating ? <Loader2 className="mx-auto h-6 w-6 animate-spin" /> :
-                             <div className="flex justify-center text-4xl gap-2 text-gray-300">
-                                {Array.from({ length: 5 }).map((_, i) => (
-                                    <Star 
-                                        key={i} 
-                                        className={`cursor-pointer hover:text-yellow-400 ${i < rating ? 'text-yellow-400' : ''}`}
-                                        onClick={() => handleRating(i + 1)}
-                                    />
-                                ))}
-                            </div>}
-                        </div>
-                    ) : (
-                         <p className="text-sm text-muted-foreground">You can provide feedback once the issue is marked as "Resolved".</p>
-                    )}
-                </CardContent>
-            </Card>
+                         <Card>
+                                <CardHeader><CardTitle>Prize Claim</CardTitle></CardHeader>
+                                <CardContent className="space-y-3 text-sm">
+                                        <p className="text-muted-foreground">
+                                            When your report is resolved and qualifies as genuine, you will receive a notification and SMS with the prize claim link.
+                                        </p>
+                                        <p className="text-muted-foreground">
+                                            Rewards can include coupons, cashback, bus or railway passes, or cash via Razorpay after more than 2 verified reports.
+                                        </p>
+                                        <Button asChild variant="outline">
+                                            <Link href="/citizen/dashboard">Check reward progress</Link>
+                                        </Button>
+                                </CardContent>
+                        </Card>
         </div>
       </div>
     </div>

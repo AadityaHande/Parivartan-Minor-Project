@@ -1,247 +1,629 @@
 
 'use client';
 
+import Link from 'next/link';
 import { useCollection, useMemoFirebase } from '@/firebase';
 import { useFirestore } from '@/firebase/provider';
-import type { Report } from '@/lib/types';
+import type { Report, ReportStatus } from '@/lib/types';
 import { collection, query } from 'firebase/firestore';
-import { useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { useMemo, useState } from 'react';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { ArrowUpRight, Building, CalendarRange, CheckCircle2, Clock, FileText, HardHat, MapPin, TrendingUp } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Clock, Building, HardHat } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#DD84d8'];
+const COLORS = ['#0ea5e9', '#22c55e', '#f59e0b', '#f97316', '#8b5cf6', '#ec4899'];
+const ACTIVE_STATUSES: ReportStatus[] = ['Submitted', 'Under Verification', 'Assigned', 'In Progress'];
+const STATUS_ORDER: ReportStatus[] = ['Submitted', 'Under Verification', 'Assigned', 'In Progress', 'Resolved', 'Rejected'];
+const STATUS_COLORS: Record<ReportStatus, string> = {
+  Submitted: '#3b82f6',
+  'Under Verification': '#f59e0b',
+  Assigned: '#f97316',
+  'In Progress': '#facc15',
+  Resolved: '#22c55e',
+  Rejected: '#ef4444',
+};
+const TIME_RANGES = {
+  '7d': 7,
+  '30d': 30,
+  '90d': 90,
+  all: null,
+} as const;
 
-export default function SmcAnalyticsPage() {
-    const firestore = useFirestore();
+type TimeRange = keyof typeof TIME_RANGES;
+type StatusScope = 'all' | ReportStatus;
 
-    const reportsQuery = useMemoFirebase(() => {
-        if (!firestore) return null;
-        return query(collection(firestore, 'reports'));
-    }, [firestore]);
+function getLocationKey(report: Report) {
+  const roadName = report.roadName?.trim();
+  if (roadName) {
+    return roadName;
+  }
 
-    const { data: reports, isLoading } = useCollection<Report>(reportsQuery);
+  const primaryLocation = report.location?.split(',')[0]?.trim();
+  return primaryLocation || 'Unknown';
+}
 
-    const analyticsData = useMemo(() => {
-        if (!reports) return null;
+function getResolutionHours(report: Report) {
+  const resolvedAction = report.actionLog?.find((log) => log.status === 'Resolved');
+  if (!resolvedAction) {
+    return null;
+  }
 
-        // Hotspot Analysis
-        const locationCounts: { [key: string]: number } = {};
-        reports.forEach(report => {
-            const locationKey = report.roadName || (report.location ? report.location.split(',')[0].trim() : 'Unknown');
-            locationCounts[locationKey] = (locationCounts[locationKey] || 0) + 1;
-        });
+  const reportTime = new Date(report.timestamp).getTime();
+  const resolvedTime = new Date(resolvedAction.timestamp).getTime();
+  return (resolvedTime - reportTime) / (1000 * 60 * 60);
+}
 
-        const hotspotData = Object.entries(locationCounts)
-            .map(([name, count]) => ({ name, count }))
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 10);
+function buildCountData(reports: Report[], selector: (report: Report) => string, limit = 6) {
+  const counts: Record<string, number> = {};
 
-        // Category Breakdown
-        const categoryCounts: { [key: string]: number } = {};
-        reports.forEach(report => {
-            const category = report.category || 'Uncategorized';
-            categoryCounts[category] = (categoryCounts[category] || 0) + 1;
-        });
-        const categoryData = Object.entries(categoryCounts).map(([name, value]) => ({ name, value }));
+  reports.forEach((report) => {
+    const key = selector(report);
+    counts[key] = (counts[key] || 0) + 1;
+  });
 
-        // Avg Resolution Time
-        const resolvedReports = reports.filter(r => r.status === 'Resolved' && r.timestamp && r.actionLog);
-        let totalResolutionTime = 0;
-        let resolvedCount = 0;
-        resolvedReports.forEach(r => {
-            const submitTime = new Date(r.timestamp).getTime();
-            const resolvedAction = r.actionLog?.find(log => log.status === 'Resolved');
-            if (resolvedAction) {
-                const resolveTime = new Date(resolvedAction.timestamp).getTime();
-                totalResolutionTime += (resolveTime - submitTime);
-                resolvedCount++;
-            }
-        });
-        const avgResolutionHours = resolvedCount > 0 ? (totalResolutionTime / resolvedCount / (1000 * 60 * 60)).toFixed(1) : 'N/A';
-        
-        // Department Load
-        const openReports = reports.filter(r => r.status !== 'Resolved' && r.status !== 'Rejected');
-        const departmentLoad: { [key: string]: number } = {};
-        openReports.forEach(report => {
-            const dept = report.department || 'Unassigned';
-            departmentLoad[dept] = (departmentLoad[dept] || 0) + 1;
-        });
-        const topDepartment = Object.entries(departmentLoad).sort((a,b) => b[1] - a[1])[0];
+  return Object.entries(counts)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit);
+}
 
-        // Contractor Performance
-        const contractorPerformance: { [key: string]: { totalTime: number, resolvedCount: number } } = {};
-        resolvedReports.forEach(report => {
-            if (report.assignedContractor) {
-                if (!contractorPerformance[report.assignedContractor]) {
-                    contractorPerformance[report.assignedContractor] = { totalTime: 0, resolvedCount: 0 };
-                }
-                const submitTime = new Date(report.timestamp).getTime();
-                const resolvedAction = report.actionLog?.find(log => log.status === 'Resolved');
-                if (resolvedAction) {
-                    const resolveTime = new Date(resolvedAction.timestamp).getTime();
-                    contractorPerformance[report.assignedContractor].totalTime += (resolveTime - submitTime);
-                    contractorPerformance[report.assignedContractor].resolvedCount++;
-                }
-            }
-        });
-        const contractorPerformanceData = Object.entries(contractorPerformance)
-            .map(([name, data]) => ({
-                name,
-                resolvedCount: data.resolvedCount,
-                avgResolutionTime: (data.totalTime / data.resolvedCount / (1000 * 60 * 60)).toFixed(1),
-            }))
-            .sort((a, b) => b.resolvedCount - a.resolvedCount);
+function buildTimelineData(reports: Report[], range: TimeRange) {
+  const buckets = new Map<string, { label: string; submitted: number; resolved: number; sortValue: number }>();
 
+  reports.forEach((report) => {
+    const date = new Date(report.timestamp);
+    const useMonthlyBuckets = range === 'all';
+    const label = useMonthlyBuckets
+      ? date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+      : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const bucketDate = useMonthlyBuckets
+      ? new Date(date.getFullYear(), date.getMonth(), 1)
+      : new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const key = bucketDate.toISOString();
+    const existing = buckets.get(key) ?? {
+      label,
+      submitted: 0,
+      resolved: 0,
+      sortValue: bucketDate.getTime(),
+    };
 
-        return { hotspotData, categoryData, avgResolutionHours, topDepartment, contractorPerformanceData };
-    }, [reports]);
-
-    if (isLoading || !analyticsData) {
-        return (
-             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card><CardHeader><Skeleton className="h-6 w-3/4" /></CardHeader><CardContent><Skeleton className="h-12 w-1/2" /></CardContent></Card>
-                <Card><CardHeader><Skeleton className="h-6 w-3/4" /></CardHeader><CardContent><Skeleton className="h-12 w-1/2" /></CardContent></Card>
-                <div className="md:col-span-2 lg:col-span-4"><Card><CardHeader><Skeleton className="h-8 w-1/4" /></CardHeader><CardContent><Skeleton className="h-72 w-full" /></CardContent></Card></div>
-                <div className="md:col-span-2 lg:col-span-4"><Card><CardHeader><Skeleton className="h-8 w-1/4" /></CardHeader><CardContent><Skeleton className="h-72 w-full" /></CardContent></Card></div>
-            </div>
-        )
+    existing.submitted += 1;
+    if (report.status === 'Resolved') {
+      existing.resolved += 1;
     }
 
+    buckets.set(key, existing);
+  });
+
+  return Array.from(buckets.values()).sort((a, b) => a.sortValue - b.sortValue);
+}
+
+function formatHours(hours: number) {
+  if (Number.isNaN(hours)) {
+    return '0.0h';
+  }
+
+  if (hours >= 24) {
+    return `${(hours / 24).toFixed(1)}d`;
+  }
+
+  return `${hours.toFixed(1)}h`;
+}
+
+export default function SmcAnalyticsPage() {
+  const firestore = useFirestore();
+  const [timeRange, setTimeRange] = useState<TimeRange>('30d');
+  const [statusScope, setStatusScope] = useState<StatusScope>('all');
+
+  const reportsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'reports'));
+  }, [firestore]);
+
+  const { data: reports, isLoading } = useCollection<Report>(reportsQuery);
+
+  const analyticsData = useMemo(() => {
+    if (!reports) return null;
+
+    const timeWindowStart = TIME_RANGES[timeRange] === null ? null : Date.now() - TIME_RANGES[timeRange]! * 24 * 60 * 60 * 1000;
+    const rangeReports = reports.filter((report) => {
+      if (!timeWindowStart) return true;
+      return new Date(report.timestamp).getTime() >= timeWindowStart;
+    });
+
+    const filteredReports = rangeReports.filter((report) => {
+      if (statusScope === 'all') return true;
+      return report.status === statusScope;
+    });
+
+    const activeReports = rangeReports.filter((report) => ACTIVE_STATUSES.includes(report.status));
+    const resolvedReports = filteredReports.filter((report) => report.status === 'Resolved');
+    const resolvedInRange = rangeReports.filter((report) => report.status === 'Resolved');
+
+    const timelineData = buildTimelineData(filteredReports, timeRange);
+    const categoryData = buildCountData(filteredReports, (report) => report.category || 'Uncategorized', 7);
+    const locationData = buildCountData(rangeReports, getLocationKey, 8);
+    const departmentData = buildCountData(activeReports, (report) => report.department || 'Unassigned', 6);
+    const statusData = STATUS_ORDER.map((status) => ({
+      name: status,
+      value: filteredReports.filter((report) => report.status === status).length,
+    })).filter((entry) => entry.value > 0);
+
+    let totalResolutionTime = 0;
+    let resolvedCount = 0;
+    resolvedInRange.forEach((report) => {
+      const resolutionHours = getResolutionHours(report);
+      if (resolutionHours !== null) {
+        totalResolutionTime += resolutionHours;
+        resolvedCount += 1;
+      }
+    });
+
+    const avgResolutionHours = resolvedCount > 0 ? (totalResolutionTime / resolvedCount).toFixed(1) : 'N/A';
+    const resolutionRate = filteredReports.length > 0 ? Math.round((resolvedReports.length / filteredReports.length) * 100) : 0;
+    const topCategory = categoryData[0];
+    const topLocation = locationData[0];
+    const topDepartment = departmentData[0];
+
+    const contractorPerformanceMap: Record<string, { resolvedCount: number; totalHours: number }> = {};
+    resolvedInRange.forEach((report) => {
+      const contractorName = report.assignedContractor || report.assignedWorkerId || 'Unassigned';
+      const resolutionHours = getResolutionHours(report);
+      if (resolutionHours === null) return;
+
+      if (!contractorPerformanceMap[contractorName]) {
+        contractorPerformanceMap[contractorName] = { resolvedCount: 0, totalHours: 0 };
+      }
+
+      contractorPerformanceMap[contractorName].resolvedCount += 1;
+      contractorPerformanceMap[contractorName].totalHours += resolutionHours;
+    });
+
+    const contractorPerformanceData = Object.entries(contractorPerformanceMap)
+      .map(([name, data]) => ({
+        name,
+        resolvedCount: data.resolvedCount,
+        avgResolutionTime: Number((data.totalHours / data.resolvedCount).toFixed(1)),
+      }))
+      .sort((a, b) => b.resolvedCount - a.resolvedCount)
+      .slice(0, 8);
+
+    return {
+      rangeReports,
+      filteredReports,
+      timelineData,
+      categoryData,
+      locationData,
+      departmentData,
+      statusData,
+      avgResolutionHours,
+      resolutionRate,
+      topCategory,
+      topLocation,
+      topDepartment,
+      contractorPerformanceData,
+      totalReports: filteredReports.length,
+      activeCount: activeReports.length,
+      resolvedCount: resolvedReports.length,
+    };
+  }, [reports, statusScope, timeRange]);
+
+  if (isLoading || !analyticsData) {
     return (
-        <div className="flex-1 space-y-4">
-            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-8 rounded-lg shadow-lg mb-8">
-                <h1 className="text-4xl font-bold mb-2">Analytics & Insights</h1>
-                <p className="text-lg">Data-driven overview of civic issues in Solapur.</p>
-            </div>
-            
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Avg. Resolution Time</CardTitle>
-                        <Clock className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{analyticsData.avgResolutionHours} hours</div>
-                        <p className="text-xs text-muted-foreground">Average time from report to resolution.</p>
-                    </CardContent>
-                </Card>
-                 <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Busiest Department</CardTitle>
-                        <Building className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{analyticsData.topDepartment ? analyticsData.topDepartment[0] : 'N/A'}</div>
-                        <p className="text-xs text-muted-foreground">{analyticsData.topDepartment ? `${analyticsData.topDepartment[1]} open cases` : 'No open cases'}</p>
-                    </CardContent>
-                </Card>
-            </div>
-
-
-            <div className="grid gap-8 lg:grid-cols-2">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Report Hotspots (Heatmap)</CardTitle>
-                        <CardDescription>Top 10 most reported locations, indicating problem areas.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="pl-2">
-                        <ResponsiveContainer width="100%" height={400}>
-                            <BarChart data={analyticsData.hotspotData} layout="vertical" margin={{ top: 5, right: 30, left: 120, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis type="number" />
-                                <YAxis dataKey="name" type="category" width={150} interval={0} />
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))' }}
-                                    labelStyle={{ color: 'hsl(var(--foreground))' }}
-                                />
-                                <Legend />
-                                <Bar dataKey="count" name="Number of Reports" fill="hsl(var(--primary))" />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Reports by Category</CardTitle>
-                        <CardDescription>Breakdown of all submitted reports by damage type.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <ResponsiveContainer width="100%" height={400}>
-                            <PieChart>
-                            <Pie
-                                data={analyticsData.categoryData}
-                                cx="50%"
-                                cy="50%"
-                                labelLine={false}
-                                label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, index }) => {
-                                    const RADIAN = Math.PI / 180;
-                                    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-                                    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                                    const y = cy + radius * Math.sin(-midAngle * RADIAN);
-                                    if (percent < 0.05) return null; // Hide label for small slices
-                                    return (
-                                    <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
-                                        {`(${(percent * 100).toFixed(0)}%)`}
-                                    </text>
-                                    );
-                                }}
-                                outerRadius={150}
-                                fill="#8884d8"
-                                dataKey="value"
-                            >
-                                {analyticsData.categoryData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Tooltip
-                                contentStyle={{ backgroundColor: 'hsl(var(--background))', border: '1px solid hsl(var(--border))' }}
-                            />
-                            <Legend />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    </CardContent>
-                </Card>
-
-                 <Card className="lg:col-span-2">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2"><HardHat /> Contractor Performance</CardTitle>
-                        <CardDescription>Performance metrics for assigned contractors and workers.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="overflow-x-auto -mx-6 px-6">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Contractor / Worker</TableHead>
-                                    <TableHead className="text-center">Resolved</TableHead>
-                                    <TableHead className="text-right hidden sm:table-cell">Avg. Resolution (Hours)</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {analyticsData.contractorPerformanceData.map(c => (
-                                    <TableRow key={c.name}>
-                                        <TableCell className="font-medium">
-                                            <div>{c.name}</div>
-                                            <div className="text-xs text-muted-foreground sm:hidden">{c.avgResolutionTime}h avg</div>
-                                        </TableCell>
-                                        <TableCell className="text-center">{c.resolvedCount}</TableCell>
-                                        <TableCell className="text-right hidden sm:table-cell">{c.avgResolutionTime}</TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                        </div>
-                         {analyticsData.contractorPerformanceData.length === 0 && (
-                            <p className="text-center text-muted-foreground py-8">No contractor performance data available yet.</p>
-                        )}
-                    </CardContent>
-                </Card>
-
-            </div>
+      <div className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Card key={index}>
+              <CardHeader>
+                <Skeleton className="h-5 w-24" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-10 w-20" />
+                <Skeleton className="mt-2 h-4 w-32" />
+              </CardContent>
+            </Card>
+          ))}
         </div>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-7 w-48" />
+            <Skeleton className="h-4 w-64" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-96 w-full" />
+          </CardContent>
+        </Card>
+        <div className="grid gap-6 xl:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Card key={index}>
+              <CardHeader>
+                <Skeleton className="h-6 w-40" />
+                <Skeleton className="h-4 w-56" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-80 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
     );
+  }
+
+  return (
+    <div className="flex-1 space-y-6">
+      <Card className="border-sky-100 bg-gradient-to-br from-sky-50 via-white to-emerald-50 shadow-sm">
+        <CardContent className="flex flex-col gap-6 p-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm ring-1 ring-slate-200">
+              <TrendingUp className="h-3.5 w-3.5 text-sky-500" />
+              Admin analytics
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">Analytics & Insights</h1>
+              <p className="max-w-2xl text-sm text-slate-600">
+                Track issue trends, worker performance, locations, and resolution speed across the city.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[360px]">
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Timeline</p>
+              <Select value={timeRange} onValueChange={(value) => setTimeRange(value as TimeRange)}>
+                <SelectTrigger className="bg-white/80">
+                  <SelectValue placeholder="Select range" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7d">Last 7 days</SelectItem>
+                  <SelectItem value="30d">Last 30 days</SelectItem>
+                  <SelectItem value="90d">Last 90 days</SelectItem>
+                  <SelectItem value="all">All time</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Status</p>
+              <Select value={statusScope} onValueChange={(value) => setStatusScope(value as StatusScope)}>
+                <SelectTrigger className="bg-white/80">
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All complaints</SelectItem>
+                  {STATUS_ORDER.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Reports in Scope</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{analyticsData.totalReports}</div>
+            <p className="text-xs text-muted-foreground">Matching the selected time and status filters.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Queue</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{analyticsData.activeCount}</div>
+            <p className="text-xs text-muted-foreground">Reports that still need action from teams.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Resolved Rate</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{analyticsData.resolutionRate}%</div>
+            <p className="text-xs text-muted-foreground">Resolved complaints in the current scope.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Avg. Resolution</CardTitle>
+            <CalendarRange className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{analyticsData.avgResolutionHours} hours</div>
+            <p className="text-xs text-muted-foreground">Average time from report to completion.</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-3">
+        <Card className="xl:col-span-2 shadow-sm">
+          <CardHeader>
+            <CardTitle>Complaint Timeline</CardTitle>
+            <CardDescription>Submitted and resolved issues in the selected scope.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={320}>
+              <AreaChart data={analyticsData.timelineData}>
+                <defs>
+                  <linearGradient id="timelineSubmitted" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="timelineResolved" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={10} />
+                <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.08)',
+                  }}
+                />
+                <Legend />
+                <Area type="monotone" dataKey="submitted" name="Submitted" stroke="#0ea5e9" fill="url(#timelineSubmitted)" strokeWidth={2.5} dot={false} />
+                <Area type="monotone" dataKey="resolved" name="Resolved" stroke="#22c55e" fill="url(#timelineResolved)" strokeWidth={2.5} dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle>Current Status Mix</CardTitle>
+            <CardDescription>How the current filtered set is distributed.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {analyticsData.statusData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={320}>
+                <PieChart>
+                  <Pie
+                    data={analyticsData.statusData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={72}
+                    outerRadius={118}
+                    paddingAngle={4}
+                  >
+                    {analyticsData.statusData.map((entry) => (
+                      <Cell key={entry.name} fill={STATUS_COLORS[entry.name as ReportStatus] ?? '#94a3b8'} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '12px',
+                      boxShadow: '0 10px 24px rgba(15, 23, 42, 0.08)',
+                    }}
+                  />
+                  <Legend verticalAlign="bottom" />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[320px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm text-muted-foreground">
+                No reports match the current filters.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Building className="h-5 w-5 text-sky-500" />
+              Department Load
+            </CardTitle>
+            <CardDescription>Open cases grouped by department.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={analyticsData.departmentData} layout="vertical" margin={{ left: 16, right: 12 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={true} vertical={false} />
+                <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
+                <YAxis dataKey="name" type="category" width={100} tickLine={false} axisLine={false} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '12px',
+                  }}
+                />
+                <Bar dataKey="value" fill="#0ea5e9" radius={[0, 8, 8, 0]} barSize={18} />
+              </BarChart>
+            </ResponsiveContainer>
+            {analyticsData.topDepartment && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Busiest: <span className="font-medium text-slate-700">{analyticsData.topDepartment.name}</span> with {analyticsData.topDepartment.value} open cases.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle>Problem Types</CardTitle>
+            <CardDescription>Most common complaint categories in the current scope.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={analyticsData.categoryData} layout="vertical" margin={{ left: 16, right: 12 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={true} vertical={false} />
+                <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
+                <YAxis dataKey="name" type="category" width={100} tickLine={false} axisLine={false} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '12px',
+                  }}
+                />
+                <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={18}>
+                  {analyticsData.categoryData.map((entry, index) => (
+                    <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            {analyticsData.topCategory && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Top issue: <span className="font-medium text-slate-700">{analyticsData.topCategory.name}</span> with {analyticsData.topCategory.value} reports.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-rose-500" />
+              Location Hotspots
+            </CardTitle>
+            <CardDescription>Areas with the highest concentration of reports.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={analyticsData.locationData} layout="vertical" margin={{ left: 16, right: 12 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={true} vertical={false} />
+                <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
+                <YAxis dataKey="name" type="category" width={100} tickLine={false} axisLine={false} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '12px',
+                  }}
+                />
+                <Bar dataKey="value" fill="#f97316" radius={[0, 8, 8, 0]} barSize={18} />
+              </BarChart>
+            </ResponsiveContainer>
+            {analyticsData.topLocation && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Hotspot: <span className="font-medium text-slate-700">{analyticsData.topLocation.name}</span> with {analyticsData.topLocation.value} reports.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="xl:col-span-2 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <HardHat className="h-5 w-5 text-slate-700" />
+              Worker Performance
+            </CardTitle>
+            <CardDescription>Resolved workload and average resolution time for workers and contractors.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto -mx-6 px-6">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50/80">
+                    <TableHead>Worker / Contractor</TableHead>
+                    <TableHead className="text-center">Resolved</TableHead>
+                    <TableHead className="text-right hidden sm:table-cell">Avg. Resolution</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {analyticsData.contractorPerformanceData.length > 0 ? (
+                    analyticsData.contractorPerformanceData.map((entry) => (
+                      <TableRow key={entry.name} className="hover:bg-slate-50/70">
+                        <TableCell className="font-medium">
+                          <div>{entry.name}</div>
+                          <div className="text-xs text-muted-foreground sm:hidden">{formatHours(entry.avgResolutionTime)} avg</div>
+                        </TableCell>
+                        <TableCell className="text-center">{entry.resolvedCount}</TableCell>
+                        <TableCell className="text-right hidden sm:table-cell">{formatHours(entry.avgResolutionTime)}</TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={3} className="py-10 text-center text-muted-foreground">
+                        No worker performance data available yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+          <CardFooter className="flex items-center justify-between border-t pt-4">
+            <p className="text-xs text-muted-foreground">
+              {analyticsData.contractorPerformanceData.length} workers with resolved cases
+            </p>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/smc/complaints?view=active" className="text-xs gap-1">
+                View all complaints
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base">Summary</CardTitle>
+            <CardDescription>Quick stats for the current scope</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <span className="text-sm text-slate-600">Reports analyzed</span>
+              <span className="text-lg font-bold text-slate-900">{analyticsData.totalReports}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <span className="text-sm text-slate-600">Active queue</span>
+              <span className="text-lg font-bold text-slate-900">{analyticsData.activeCount}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <span className="text-sm text-slate-600">Resolved</span>
+              <span className="text-lg font-bold text-emerald-600">{analyticsData.resolvedCount}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <span className="text-sm text-slate-600">Resolution rate</span>
+              <span className="text-lg font-bold text-slate-900">{analyticsData.resolutionRate}%</span>
+            </div>
+            <Button asChild variant="outline" size="sm" className="w-full">
+              <Link href="/smc/complaints">Go to active queue</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
 }

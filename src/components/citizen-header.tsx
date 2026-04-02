@@ -1,10 +1,10 @@
 'use client';
+
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { Bell, LogOut, Settings, User, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useCollection, useMemoFirebase } from '@/firebase';
 import { useFirestore } from '@/firebase/provider';
 import { collection, query, orderBy, limit, doc, writeBatch } from 'firebase/firestore';
@@ -21,7 +21,6 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 export default function CitizenHeader() {
-  const pathname = usePathname();
   const router = useRouter();
   const firestore = useFirestore();
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
@@ -42,7 +41,7 @@ export default function CitizenHeader() {
   }, [firestore]);
 
   const { data: notifications } = useCollection<Notification>(notificationsQuery);
-  const unreadCount = notifications?.filter(n => !n.isRead).length || 0;
+  const unreadCount = notifications?.filter((n) => !n.isRead).length || 0;
 
   const handleReadAll = async () => {
     if (!firestore || !notifications) return;
@@ -64,14 +63,13 @@ export default function CitizenHeader() {
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-white border-b border-gray-100 shadow-sm">
+    <header className="sticky top-0 z-40 w-full bg-white dark:bg-slate-950 border-b border-gray-100 dark:border-slate-800 shadow-sm">
       <div className="flex h-16 items-center justify-between px-4">
-        {/* Left side: Profile/Settings */}
         <div className="flex items-center gap-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full hover:bg-gray-100">
-                <Avatar className="h-9 w-9 border-2 border-emerald-100">
+              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800">
+                <Avatar className="h-9 w-9 border-2 border-emerald-100 dark:border-emerald-900">
                   <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-green-500 text-white text-sm font-semibold">
                     C
                   </AvatarFallback>
@@ -79,7 +77,7 @@ export default function CitizenHeader() {
                 <span className="sr-only">Profile menu</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56 rounded-xl shadow-lg border-0">
+            <DropdownMenuContent align="start" className="w-56 rounded-xl shadow-lg border dark:border-slate-800">
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
                   <p className="text-sm font-semibold">My Account</p>
@@ -90,8 +88,8 @@ export default function CitizenHeader() {
               <DropdownMenuItem asChild className="cursor-pointer rounded-lg">
                 <Link href="/citizen/profile" className="flex items-center justify-between">
                   <div className="flex items-center">
-                    <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center mr-3">
-                      <User className="h-4 w-4 text-blue-600" />
+                    <div className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-950 flex items-center justify-center mr-3">
+                      <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                     </div>
                     Profile
                   </div>
@@ -101,8 +99,8 @@ export default function CitizenHeader() {
               <DropdownMenuItem asChild className="cursor-pointer rounded-lg">
                 <Link href="/citizen/profile" className="flex items-center justify-between">
                   <div className="flex items-center">
-                    <div className="h-8 w-8 rounded-lg bg-gray-50 flex items-center justify-center mr-3">
-                      <Settings className="h-4 w-4 text-gray-600" />
+                    <div className="h-8 w-8 rounded-lg bg-gray-50 dark:bg-slate-900 flex items-center justify-center mr-3">
+                      <Settings className="h-4 w-4 text-gray-600 dark:text-slate-300" />
                     </div>
                     Settings
                   </div>
@@ -110,27 +108,27 @@ export default function CitizenHeader() {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="cursor-pointer rounded-lg text-red-600 focus:text-red-600 focus:bg-red-50">
-                <div className="h-8 w-8 rounded-lg bg-red-50 flex items-center justify-center mr-3">
+              <DropdownMenuItem onClick={handleLogout} className="cursor-pointer rounded-lg text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950">
+                <div className="h-8 w-8 rounded-lg bg-red-50 dark:bg-red-950 flex items-center justify-center mr-3">
                   <LogOut className="h-4 w-4" />
                 </div>
                 Sign Out
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
           <div className="flex flex-col">
-            <span className="font-bold text-gray-900">Parivartan</span>
-            <span className="text-[10px] text-emerald-600 font-medium">Citizen Portal</span>
+            <span className="font-bold text-gray-900 dark:text-slate-100">Parivartan</span>
+            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Citizen Portal</span>
           </div>
         </div>
 
-        {/* Right side: Notifications */}
         <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full relative hover:bg-gray-100">
-                <div className="h-9 w-9 rounded-full bg-gray-50 flex items-center justify-center">
-                  <Bell className="h-5 w-5 text-gray-600" />
+              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full relative hover:bg-gray-100 dark:hover:bg-slate-800">
+                <div className="h-9 w-9 rounded-full bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
+                  <Bell className="h-5 w-5 text-gray-600 dark:text-slate-300" />
                 </div>
                 {unreadCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 h-5 w-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center shadow-sm">
@@ -140,14 +138,14 @@ export default function CitizenHeader() {
                 <span className="sr-only">Notifications</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80 rounded-xl shadow-lg border-0">
+            <DropdownMenuContent align="end" className="w-80 rounded-xl shadow-lg border dark:border-slate-800">
               <DropdownMenuLabel className="flex justify-between items-center">
                 <span className="font-semibold">Notifications</span>
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={handleReadAll}
-                    className="text-xs text-gray-500 hover:underline font-medium"
+                    className="text-xs text-gray-500 dark:text-slate-400 hover:underline font-medium"
                     disabled={isMarkingAllRead || unreadCount === 0}
                   >
                     {isMarkingAllRead ? 'Reading...' : 'Read all'}
@@ -169,8 +167,8 @@ export default function CitizenHeader() {
                 ))
               ) : (
                 <div className="p-6 text-center">
-                  <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
-                    <Bell className="h-6 w-6 text-gray-400" />
+                  <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-slate-900 flex items-center justify-center mx-auto mb-3">
+                    <Bell className="h-6 w-6 text-gray-400 dark:text-slate-500" />
                   </div>
                   <p className="text-sm text-muted-foreground">No notifications yet</p>
                 </div>

@@ -1,6 +1,7 @@
 'use client';
+
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Bell, MapPin, ExternalLink, Construction, AlertTriangle, Wrench, Info } from 'lucide-react';
 import { useCollection, useMemoFirebase } from '@/firebase';
@@ -11,16 +12,38 @@ import { Skeleton } from '@/components/ui/skeleton';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { useUser } from '@/firebase';
 
 const typeConfig = {
-  road_construction: { icon: Construction, label: 'Road Construction', color: 'bg-orange-500' },
-  traffic_update: { icon: AlertTriangle, label: 'Traffic Update', color: 'bg-yellow-500' },
-  maintenance: { icon: Wrench, label: 'Maintenance', color: 'bg-blue-500' },
-  general: { icon: Info, label: 'General', color: 'bg-gray-500' },
+  road_construction: {
+    icon: Construction,
+    label: 'Road Construction',
+    bgGradient: 'from-orange-400 to-orange-600',
+    badgeColor: 'bg-orange-100 text-orange-800',
+  },
+  traffic_update: {
+    icon: AlertTriangle,
+    label: 'Traffic Update',
+    bgGradient: 'from-yellow-400 to-amber-600',
+    badgeColor: 'bg-yellow-100 text-yellow-800',
+  },
+  maintenance: {
+    icon: Wrench,
+    label: 'Maintenance',
+    bgGradient: 'from-blue-400 to-blue-600',
+    badgeColor: 'bg-blue-100 text-blue-800',
+  },
+  general: {
+    icon: Info,
+    label: 'General',
+    bgGradient: 'from-slate-400 to-slate-600',
+    badgeColor: 'bg-slate-100 text-slate-800',
+  },
 };
 
 export default function NotificationsPage() {
   const firestore = useFirestore();
+  const { user } = useUser();
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
 
   const notificationsQuery = useMemoFirebase(() => {
@@ -29,12 +52,14 @@ export default function NotificationsPage() {
   }, [firestore]);
 
   const { data: notifications, isLoading } = useCollection<Notification>(notificationsQuery);
+  const visibleNotifications = notifications?.filter((notification) => !notification.userId || notification.userId === user?.uid);
 
   const handleReadAll = async () => {
-    if (!firestore || !notifications) return;
+    if (!firestore || !visibleNotifications) return;
+
     setIsMarkingAllRead(true);
     try {
-      const unreadNotifications = notifications.filter((notification) => !notification.isRead);
+      const unreadNotifications = visibleNotifications.filter((notification) => !notification.isRead);
       if (unreadNotifications.length === 0) return;
 
       const batch = writeBatch(firestore);
@@ -49,24 +74,27 @@ export default function NotificationsPage() {
     }
   };
 
-  const unreadCount = notifications?.filter((notification) => !notification.isRead).length || 0;
+  const unreadCount = visibleNotifications?.filter((notification) => !notification.isRead).length || 0;
 
   return (
     <div className="flex-1 space-y-4 p-4 md:p-6">
-      <div className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 md:p-6 rounded-lg shadow-lg mb-4">
-        <div className="flex items-center justify-between gap-3">
+      <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-950 p-6 text-white shadow-xl dark:border-slate-800 dark:bg-slate-900 md:p-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-          <Bell className="h-6 w-6" />
-          <div>
-            <h1 className="text-lg md:text-xl font-bold">Notifications</h1>
-            <p className="text-sm opacity-90">Updates from Pune Municipal Corporation</p>
-          </div>
+            <div className="rounded-xl bg-white/10 p-3 backdrop-blur-sm">
+              <Bell className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold md:text-3xl">Notifications</h1>
+              <p className="text-sm text-white/75">Stay updated with municipal announcements</p>
+            </div>
           </div>
           <Button
             variant="secondary"
             size="sm"
             onClick={handleReadAll}
             disabled={isMarkingAllRead || unreadCount === 0}
+            className="self-start font-semibold sm:self-auto"
           >
             {isMarkingAllRead ? 'Marking...' : `Read All${unreadCount > 0 ? ` (${unreadCount})` : ''}`}
           </Button>
@@ -74,96 +102,110 @@ export default function NotificationsPage() {
       </div>
 
       <div className="space-y-3">
-        {isLoading && Array.from({ length: 3 }).map((_, i) => (
-          <Card key={i}>
-            <CardContent className="p-4">
-              <div className="flex gap-4">
-                <Skeleton className="h-16 w-16 rounded-md" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-3 w-1/2" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-
-        {!isLoading && notifications && notifications.map((notification) => {
-          const config = typeConfig[notification.type] || typeConfig.general;
-          const Icon = config.icon;
-
-          return (
-            <Card
-              key={notification.id}
-              className={`hover:shadow-md transition-shadow ${
-                !notification.isRead ? 'border-blue-300 bg-blue-50' : ''
-              }`}
-            >
+        {isLoading &&
+          Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i}>
               <CardContent className="p-4">
                 <div className="flex gap-4">
-                  {notification.imageUrl ? (
-                    <div className="relative h-20 w-20 rounded-md overflow-hidden flex-shrink-0">
-                      <Image
-                        src={notification.imageUrl}
-                        alt={notification.title}
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
-                  ) : (
-                    <div className={`h-20 w-20 rounded-md flex items-center justify-center flex-shrink-0 ${config.color}`}>
-                      <Icon className="h-8 w-8 text-white" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <Badge variant="secondary" className="mb-1 text-xs">
-                          {config.label}
-                        </Badge>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-sm">{notification.title}</h3>
-                          {!notification.isRead && (
-                            <div className="h-2 w-2 rounded-full bg-blue-500 flex-shrink-0" />
-                          )}
-                        </div>
-                      </div>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {new Date(notification.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                      {notification.description}
-                    </p>
-                    {notification.location && (
-                      <div className="flex items-center gap-2 mt-2">
-                        <MapPin className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">{notification.location}</span>
-                        {notification.locationLink && (
-                          <Button variant="link" size="sm" className="h-auto p-0 text-xs" asChild>
-                            <Link href={notification.locationLink} target="_blank">
-                              <ExternalLink className="h-3 w-3 mr-1" />
-                              View on Map
-                            </Link>
-                          </Button>
-                        )}
-                      </div>
-                    )}
+                  <Skeleton className="h-16 w-16 rounded-md" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-1/2" />
                   </div>
                 </div>
               </CardContent>
             </Card>
-          );
-        })}
+          ))}
 
-        {!isLoading && (!notifications || notifications.length === 0) && (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <Bell className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="font-semibold mb-2">No Notifications</h3>
-              <p className="text-sm text-muted-foreground">
-                You'll see updates from SMC here when they're available.
+        {!isLoading &&
+          visibleNotifications &&
+          visibleNotifications.map((notification) => {
+            const config = typeConfig[notification.type as keyof typeof typeConfig] || typeConfig.general;
+            const Icon = config.icon;
+            const unread = !notification.isRead;
+
+            return (
+              <Card
+                key={notification.id}
+                className={`rounded-2xl border transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl ${
+                  unread
+                    ? `border-transparent bg-gradient-to-r ${config.bgGradient} shadow-lg text-white`
+                    : 'border-slate-200 bg-card shadow-md dark:border-slate-800'
+                }`}
+              >
+                <CardContent className="p-4 md:p-5">
+                  <div className="flex items-start gap-4">
+                    {notification.imageUrl ? (
+                      <div className="relative h-20 w-20 rounded-lg overflow-hidden flex-shrink-0">
+                        <Image src={notification.imageUrl} alt={notification.title} fill className="object-cover" />
+                      </div>
+                    ) : (
+                      <div className={`h-20 w-20 rounded-lg flex items-center justify-center flex-shrink-0 bg-gradient-to-br ${config.bgGradient}`}>
+                        <Icon className="h-10 w-10 text-white" />
+                      </div>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <Badge className={`mb-2 text-xs font-semibold ${config.badgeColor}`}>
+                            {config.label}
+                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <h3 className={`font-bold text-sm ${unread ? 'text-white' : 'text-foreground'}`}>
+                              {notification.title}
+                            </h3>
+                            {unread && <div className="h-3 w-3 rounded-full bg-white animate-pulse" />}
+                          </div>
+                        </div>
+                        <span className={`whitespace-nowrap text-xs font-medium ${unread ? 'text-white/85' : 'text-muted-foreground'}`}>
+                          {new Date(notification.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+
+                      <p className={`text-sm mt-2 line-clamp-2 ${unread ? 'text-white/90' : 'text-muted-foreground'}`}>
+                        {notification.description}
+                      </p>
+
+                      {notification.location && (
+                        <div className={`mt-3 flex items-center gap-2 pt-2 ${unread ? 'border-t border-white/20' : 'border-t border-border'}`}>
+                          <MapPin className={`h-4 w-4 ${unread ? 'text-white/80' : 'text-muted-foreground'}`} />
+                          <span className={`text-xs ${unread ? 'text-white/85' : 'text-muted-foreground'}`}>
+                            {notification.location}
+                          </span>
+
+                          {notification.locationLink && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={`h-auto p-0 text-xs ml-auto ${unread ? 'text-white hover:bg-white/20' : ''}`}
+                              asChild
+                            >
+                              <Link href={notification.locationLink} target="_blank">
+                                <ExternalLink className="h-3 w-3 mr-1" />
+                                View Map
+                              </Link>
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+
+        {!isLoading && (!visibleNotifications || visibleNotifications.length === 0) && (
+          <Card className="border-none shadow-md rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+            <CardContent className="p-12 text-center">
+              <div className="bg-gradient-to-br from-slate-400 to-slate-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Bell className="h-8 w-8 text-white" />
+              </div>
+              <h3 className="font-bold text-lg mb-2 text-slate-800 dark:text-slate-100">No Notifications Yet</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Check back soon for updates on municipal announcements and repairs in your area.
               </p>
             </CardContent>
           </Card>

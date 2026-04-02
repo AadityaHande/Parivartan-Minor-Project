@@ -53,7 +53,7 @@ The user will provide a report object. Analyze its entire lifecycle:
 - What was the original issue?
 - What were the key status changes in the actionLog? (e.g., Submitted -> Assigned -> Resolved)
 - How long did it take to resolve?
-- What was the final outcome and was there any citizen feedback?
+- What was the final outcome?
 
 Generate a concise, 3-4 sentence summary in markdown format. Start with the report ID. Use bold for key terms like dates, statuses, and ratings.
 

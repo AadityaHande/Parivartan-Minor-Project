@@ -40,7 +40,6 @@
 | | Badge Tiers | Bronze, Silver, Gold, Platinum badges based on points | Citizen |
 | | Podium Display | Top 3 users displayed on podium | Citizen |
 | | Rewards Tiers | Unlock rewards at 100+, 200+, and 500+ points | Citizen |
-| ⭐ Feedback | Citizen Rating | Rate resolution quality (1-5 stars) after completion | Citizen |
 | 👤 User Management | Google Authentication | Login/register with Google account | All |
 | | Role-Based Access | Separate portals for Citizen, SMC Officer, Worker | All |
 | | Demo Logins | One-click demo logins for all roles | All |

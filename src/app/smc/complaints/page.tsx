@@ -1,10 +1,8 @@
 'use client';
-import {
-  File,
-  MoreHorizontal,
-  Sparkles,
-} from 'lucide-react';
+
 import Link from 'next/link';
+import { useMemo, useState } from 'react';
+import { Archive, File, MoreHorizontal, Search, Sparkles, UserCheck } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,8 +19,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import {
   Table,
   TableBody,
@@ -38,48 +38,101 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs';
 import { useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, orderBy, where, DocumentData, Query, doc, updateDoc, arrayUnion, increment } from 'firebase/firestore';
-import type { Report, ReportStatus } from '@/lib/types';
+import { collection, query, orderBy, doc, updateDoc, arrayUnion, increment, getDocs, addDoc, getDoc, where } from 'firebase/firestore';
+import type { Report, ReportStatus, User } from '@/lib/types';
 import { useFirestore } from '@/firebase/provider';
-import { useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
+import { isGenuineResolvedReport, getRewardOffer, buildRewardNotificationText } from '@/lib/reward-utils';
 
-const statusColors: { [key: string]: string } = {
-    Submitted: 'bg-blue-500',
-    'Under Verification': 'bg-yellow-500',
-    Assigned: 'bg-orange-500',
-    'In Progress': 'bg-amber-500',
-    Resolved: 'bg-green-500',
-    Rejected: 'bg-red-500',
+const statusColors: Record<ReportStatus, string> = {
+  Submitted: 'bg-blue-500',
+  'Under Verification': 'bg-yellow-500',
+  Assigned: 'bg-orange-500',
+  'In Progress': 'bg-amber-500',
+  Resolved: 'bg-green-500',
+  Rejected: 'bg-red-500',
 };
 
+const ACTIVE_STATUSES: ReportStatus[] = ['Submitted', 'Under Verification', 'Assigned', 'In Progress'];
+const ARCHIVE_STATUSES: ReportStatus[] = ['Resolved', 'Rejected'];
+
+type ComplaintView = 'active' | ReportStatus;
+
+function matchesSearch(report: Report, value: string) {
+  if (!value) return true;
+
+  const haystack = [
+    report.description,
+    report.location,
+    report.userName,
+    report.category,
+    report.department,
+    report.assignedContractor,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return haystack.includes(value);
+}
 
 export default function SmcComplaintsPage() {
-  const [filter, setFilter] = useState('all');
+  const [view, setView] = useState<ComplaintView>('active');
+  const [search, setSearch] = useState('');
   const firestore = useFirestore();
   const { user } = useUser();
   const { toast } = useToast();
 
   const reportsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    let q: Query<DocumentData> = collection(firestore, 'reports');
+    return query(collection(firestore, 'reports'), orderBy('timestamp', 'desc'));
+  }, [firestore]);
 
-    if (filter !== 'all') {
-      q = query(q, where('status', '==', filter));
-    }
-    
-    q = query(q, orderBy('timestamp', 'desc'));
-    
-    return q;
-  }, [firestore, filter]);
+  const workersQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'users'), where('role', '==', 'worker'));
+  }, [firestore]);
 
   const { data: reports, isLoading } = useCollection<Report>(reportsQuery);
+  const { data: workers } = useCollection<User>(workersQuery);
 
-  const handleTabChange = (value: string) => {
-    setFilter(value);
-  }
-  
+  const filteredReports = useMemo(() => {
+    if (!reports) return [];
+    const searchValue = search.trim().toLowerCase();
+
+    return reports.filter((report) => {
+      if (view === 'active') {
+        if (!ACTIVE_STATUSES.includes(report.status)) {
+          return false;
+        }
+      } else if (report.status !== view) {
+        return false;
+      }
+
+      return matchesSearch(report, searchValue);
+    });
+  }, [reports, search, view]);
+
+  const summary = useMemo(() => {
+    if (!reports) {
+      return null;
+    }
+
+    const activeCount = reports.filter((report) => ACTIVE_STATUSES.includes(report.status)).length;
+    const resolvedCount = reports.filter((report) => report.status === 'Resolved').length;
+    const archiveCount = reports.filter((report) => ARCHIVE_STATUSES.includes(report.status)).length;
+    const attentionCount = reports.filter((report) => report.status === 'Submitted' || report.status === 'Under Verification').length;
+
+    return {
+      totalCount: reports.length,
+      activeCount,
+      resolvedCount,
+      archiveCount,
+      attentionCount,
+    };
+  }, [reports]);
+
   const handleUpdateStatus = async (report: Report, newStatus: ReportStatus, details?: { department?: string }) => {
     if (!firestore || !user) {
       toast({ variant: 'destructive', title: 'Authentication Error', description: 'You must be logged in.' });
@@ -91,14 +144,14 @@ export default function SmcComplaintsPage() {
 
     const reportRef = doc(firestore, 'reports', report.id);
     try {
-      const updatePayload: any = { status: newStatus };
+      const updatePayload: Record<string, unknown> = { status: newStatus };
       let notes = `Status updated to ${newStatus}.`;
 
       if (newStatus === 'Assigned' && details?.department) {
         updatePayload.department = details.department;
         notes = `Quick-assigned to ${details.department} department based on AI suggestion.`;
       }
-      
+
       const newLogEntry = {
         status: newStatus,
         timestamp: new Date().toISOString(),
@@ -113,13 +166,55 @@ export default function SmcComplaintsPage() {
       if (newStatus === 'Resolved' && report.status !== 'Resolved') {
         const userToRewardRef = doc(firestore, 'users', report.userId);
         await updateDoc(userToRewardRef, { points: increment(10) });
+
+        const resolvedReportsSnapshot = await getDocs(
+          query(
+            collection(firestore, 'reports'),
+            orderBy('timestamp', 'desc')
+          )
+        );
+
+        const resolvedReports = resolvedReportsSnapshot.docs
+          .map((reportDoc) => reportDoc.data() as Report)
+          .filter((item) => item.userId === report.userId && item.status === 'Resolved');
+        const qualifiedCount = resolvedReports.filter((item) => isGenuineResolvedReport(item)).length + 1;
+        const rewardOffer = getRewardOffer(qualifiedCount);
+
+        if (rewardOffer) {
+          const prizeMessage = buildRewardNotificationText(rewardOffer);
+          await addDoc(collection(firestore, 'notifications'), {
+            title: rewardOffer.title,
+            description: `${prizeMessage} Tap the dashboard to claim it.`,
+            createdAt: new Date().toISOString(),
+            createdBy: user?.displayName || 'System',
+            type: 'general',
+            isRead: false,
+            userId: report.userId,
+          });
+
+          try {
+            const userSnapshot = await getDoc(doc(firestore, 'users', report.userId));
+            const phoneNumber = userSnapshot.data()?.phoneNumber;
+            if (phoneNumber) {
+              await fetch('/api/auth/send-sms', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  phoneNumber,
+                  message: `${prizeMessage} Claim via Parivartan dashboard.`,
+                }),
+              });
+            }
+          } catch (smsError) {
+            console.error('Reward SMS failed:', smsError);
+          }
+        }
       }
 
       toast({
         title: 'Report Updated',
         description: `The report has been updated to ${newStatus}.`,
       });
-
     } catch (error) {
       console.error(error);
       toast({
@@ -130,153 +225,244 @@ export default function SmcComplaintsPage() {
     }
   };
 
+  const handleAssignWorker = async (report: Report, worker: User) => {
+    if (!firestore || !user) {
+      toast({ variant: 'destructive', title: 'Authentication Error', description: 'You must be logged in.' });
+      return;
+    }
+
+    const reportRef = doc(firestore, 'reports', report.id);
+
+    try {
+      await updateDoc(reportRef, {
+        status: 'Assigned',
+        assignedWorkerId: worker.id,
+        assignedContractor: worker.name,
+        assignedBy: user.displayName || 'SMC Officer',
+        workerAssignmentStatus: 'Pending',
+        actionLog: arrayUnion({
+          status: 'Assigned',
+          timestamp: new Date().toISOString(),
+          actor: 'Official',
+          actorName: user.displayName || 'SMC Officer',
+          notes: `Assigned to ${worker.name}.`,
+        }),
+      });
+
+      if (worker.phoneNumber) {
+        await fetch('/api/auth/send-sms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phoneNumber: worker.phoneNumber,
+            message: `New task assigned: ${report.description}. Location: ${report.location}.`,
+          }),
+        });
+      }
+
+      toast({ title: 'Worker assigned', description: `${worker.name} has been assigned to this complaint.` });
+    } catch (error) {
+      console.error(error);
+      toast({ variant: 'destructive', title: 'Assignment failed', description: 'Could not assign worker.' });
+    }
+  };
 
   return (
-    <>
-      <Tabs defaultValue="all" onValueChange={handleTabChange}>
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <div className="overflow-x-auto pb-2 sm:pb-0 -mx-4 px-4 sm:mx-0 sm:px-0">
-            <TabsList className="inline-flex w-max sm:w-auto">
-              <TabsTrigger value="all">All</TabsTrigger>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Complaints</h1>
+        <p className="mt-1 max-w-2xl text-sm text-slate-600">
+          Review complaints, assign specific workers, and move finished cases into the resolved archive.
+        </p>
+      </div>
+
+      <Tabs value={view} onValueChange={(value) => setView(value as ComplaintView)}>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+          <div className="overflow-x-auto pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0">
+            <TabsList className="inline-flex w-max lg:w-auto">
+              <TabsTrigger value="active">Active queue</TabsTrigger>
               <TabsTrigger value="Submitted">Submitted</TabsTrigger>
               <TabsTrigger value="Under Verification" className="whitespace-nowrap">Under Verification</TabsTrigger>
               <TabsTrigger value="Assigned">Assigned</TabsTrigger>
               <TabsTrigger value="In Progress" className="whitespace-nowrap">In Progress</TabsTrigger>
-              <TabsTrigger value="Resolved">Resolved</TabsTrigger>
+              <TabsTrigger value="Resolved">Resolved archive</TabsTrigger>
               <TabsTrigger value="Rejected">Rejected</TabsTrigger>
             </TabsList>
           </div>
-          <div className="flex items-center gap-2 sm:ml-auto">
-            <Button size="sm" variant="outline" className="h-8 gap-1">
+          <div className="flex flex-1 items-center gap-2 lg:ml-auto lg:max-w-sm">
+            <div className="relative w-full">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by citizen, location, category, or department"
+                className="pl-9"
+              />
+            </div>
+            <Button size="sm" variant="outline" className="h-10 gap-1 shrink-0">
               <File className="h-3.5 w-3.5" />
-              <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
-                Export
-              </span>
+              <span className="hidden sm:inline">Export</span>
             </Button>
           </div>
         </div>
-        <TabsContent value={filter}>
-          <Card>
-            <CardHeader>
-              <CardTitle>Complaints</CardTitle>
+
+        <TabsContent value={view} className="mt-6">
+          <Card className="shadow-sm">
+            <CardHeader className="space-y-1">
+              <CardTitle>{view === 'active' ? 'Active complaints' : `${view} complaints`}</CardTitle>
               <CardDescription>
-                Manage and track all citizen-submitted reports.
+                {view === 'active'
+                  ? 'Resolved items stay in the archive tab so the active queue stays focused.'
+                  : 'Manage the selected complaint state and review archived records when needed.'}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto -mx-6 px-6">
                 <Table>
                   <TableHeader>
-                  <TableRow>
-                    <TableHead className="hidden w-[100px] sm:table-cell">
-                      <span className="sr-only">Image</span>
-                    </TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="hidden md:table-cell">
-                      Citizen
-                    </TableHead>
-                    <TableHead className="hidden md:table-cell">
-                      Date
-                    </TableHead>
-                    <TableHead>
-                      <span className="sr-only">Actions</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                   {isLoading && Array.from({length: 10}).map((_, i) => (
-                    <TableRow key={i}>
-                        <TableCell className="hidden sm:table-cell"><Skeleton className="w-16 h-16 rounded-md" /></TableCell>
+                    <TableRow className="bg-slate-50/80">
+                      <TableHead className="hidden w-[100px] sm:table-cell">
+                        <span className="sr-only">Image</span>
+                      </TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="hidden md:table-cell">Citizen</TableHead>
+                      <TableHead className="hidden md:table-cell">Date</TableHead>
+                      <TableHead>
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading && Array.from({ length: 8 }).map((_, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="hidden sm:table-cell"><Skeleton className="h-16 w-16 rounded-md" /></TableCell>
                         <TableCell><Skeleton className="h-6 w-48" /></TableCell>
                         <TableCell><Skeleton className="h-6 w-24" /></TableCell>
                         <TableCell><Skeleton className="h-6 w-32" /></TableCell>
                         <TableCell><Skeleton className="h-6 w-28" /></TableCell>
                         <TableCell><Skeleton className="h-8 w-8" /></TableCell>
-                    </TableRow>
-                   ))}
-                  {reports?.map(report => (
-                  <TableRow key={report.id}>
-                    <TableCell className="hidden sm:table-cell">
-                      <img
-                        alt="Report image"
-                        className="aspect-square rounded-md object-cover"
-                        height="64"
-                        src={report.imageUrl}
-                        width="64"
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      {report.description}
-                      <p className="text-xs text-muted-foreground">{report.location.substring(0, 40)}...</p>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={statusColors[report.status] ?? 'bg-gray-500'}>{report.status}</Badge>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      {report.userName}
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                        {new Date(report.timestamp).toLocaleString()}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            aria-haspopup="true"
-                            size="icon"
-                            variant="ghost"
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                            <span className="sr-only">Toggle menu</span>
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem asChild><Link href={`/smc/complaint/${report.id}`}>View Details</Link></DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={(e) => e.preventDefault()}
-                            onClick={() => {
-                              if (report.aiAnalysis?.suggestedDepartment && report.aiAnalysis.suggestedDepartment !== 'Unassigned') {
-                                handleUpdateStatus(report, 'Assigned', { department: report.aiAnalysis.suggestedDepartment });
-                              } else {
-                                toast({
-                                  variant: "destructive",
-                                  title: "No AI Suggestion",
-                                  description: "AI analysis did not provide a specific department suggestion for this report."
-                                });
-                              }
-                            }}
-                            disabled={!report.aiAnalysis?.suggestedDepartment || report.aiAnalysis.suggestedDepartment === 'Unassigned' || ['Assigned', 'In Progress', 'Resolved', 'Rejected'].includes(report.status)}
-                          >
-                            <Sparkles className="mr-2 h-4 w-4" />
-                            Quick Assign (AI)
-                          </DropdownMenuItem>
-                          <DropdownMenuItem 
-                            onSelect={(e) => e.preventDefault()} 
-                            onClick={() => handleUpdateStatus(report, 'Resolved')}
-                            disabled={report.status === 'Resolved'}
-                          >
-                            Mark as Resolved
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      </TableRow>
+                    ))}
+
+                    {!isLoading && filteredReports.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="py-14 text-center text-muted-foreground">
+                          No complaints match the selected filters.
+                        </TableCell>
+                      </TableRow>
+                    )}
+
+                    {!isLoading && filteredReports.map((report) => {
+                      const isArchive = report.status === 'Resolved' || report.status === 'Rejected';
+                      const canQuickAssign = !isArchive && report.aiAnalysis?.suggestedDepartment && report.aiAnalysis.suggestedDepartment !== 'Unassigned';
+                      const canResolve = !isArchive && report.status !== 'Resolved';
+
+                      return (
+                        <TableRow key={report.id} className="hover:bg-slate-50/80">
+                          <TableCell className="hidden sm:table-cell">
+                            <img
+                              alt="Report image"
+                              className="aspect-square rounded-md object-cover"
+                              height="64"
+                              src={report.imageUrl}
+                              width="64"
+                            />
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            <div className="space-y-1">
+                              <p className="line-clamp-2 text-sm text-slate-900">{report.description}</p>
+                              <p className="text-xs text-muted-foreground">{report.location.substring(0, 48)}{report.location.length > 48 ? '...' : ''}</p>
+                              <div className="flex flex-wrap gap-2 pt-1 text-xs text-muted-foreground">
+                                <span>{report.category}</span>
+                                <span>•</span>
+                                <span>{report.department || 'Unassigned'}</span>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={statusColors[report.status] ?? 'bg-gray-500'}>{report.status}</Badge>
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            {report.userName}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            {new Date(report.timestamp).toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button aria-haspopup="true" size="icon" variant="ghost">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                  <span className="sr-only">Toggle menu</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/smc/complaint/${report.id}`}>View Details</Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuLabel className="flex items-center gap-2 text-xs">
+                                  <UserCheck className="h-3.5 w-3.5" /> Assign to worker
+                                </DropdownMenuLabel>
+                                {(workers || []).length > 0 ? (
+                                  (workers || []).map((worker) => (
+                                    <DropdownMenuItem
+                                      key={worker.id}
+                                      onSelect={(event) => event.preventDefault()}
+                                      onClick={() => handleAssignWorker(report, worker)}
+                                      disabled={isArchive}
+                                    >
+                                      {worker.name}
+                                    </DropdownMenuItem>
+                                  ))
+                                ) : (
+                                  <DropdownMenuItem disabled>No workers available</DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
+                                  onSelect={(event) => event.preventDefault()}
+                                  onClick={() => {
+                                    if (canQuickAssign) {
+                                      handleUpdateStatus(report, 'Assigned', { department: report.aiAnalysis?.suggestedDepartment });
+                                    } else {
+                                      toast({
+                                        variant: 'destructive',
+                                        title: 'No AI Suggestion',
+                                        description: 'AI analysis did not provide a specific department suggestion for this report.',
+                                      });
+                                    }
+                                  }}
+                                  disabled={!canQuickAssign}
+                                >
+                                  <Sparkles className="mr-2 h-4 w-4" />
+                                  Quick Assign (AI)
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={(event) => event.preventDefault()}
+                                  onClick={() => handleUpdateStatus(report, 'Resolved')}
+                                  disabled={!canResolve}
+                                >
+                                  Mark as Resolved
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
             <CardFooter>
               <div className="text-xs text-muted-foreground">
-                Showing <strong>{reports?.length ?? 0}</strong> of <strong>{reports?.length ?? 0}</strong>{' '}
-                reports
+                Showing <strong>{filteredReports.length}</strong> of <strong>{summary?.totalCount ?? 0}</strong> reports. Resolved reports stay in the archive tab.
               </div>
             </CardFooter>
           </Card>
         </TabsContent>
       </Tabs>
-    </>
+    </div>
   );
 }

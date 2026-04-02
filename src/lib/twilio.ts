@@ -23,6 +23,26 @@ function normalizeSmsText(input: string): string {
   return input.replace(/\s+/g, ' ').trim();
 }
 
+function normalizePhoneNumber(input: string): string {
+  const compact = input.replace(/[\s()-]/g, '');
+
+  if (compact.startsWith('+')) {
+    return compact;
+  }
+
+  const digitsOnly = compact.replace(/\D/g, '');
+
+  if (digitsOnly.length === 10) {
+    return `+91${digitsOnly}`;
+  }
+
+  if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
+    return `+${digitsOnly}`;
+  }
+
+  return compact;
+}
+
 function splitSmsMessage(message: string): string[] {
   const normalized = normalizeSmsText(message);
   if (normalized.length <= MAX_SMS_CHUNK_LENGTH) {
@@ -77,6 +97,8 @@ async function sendMessagePart({
   body: string;
 }): Promise<{ success: boolean; messageSid?: string; error?: string }> {
   for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt += 1) {
+    const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
+
     const response = await fetch(TWILIO_MESSAGES_URL, {
       method: 'POST',
       headers: {
@@ -85,7 +107,7 @@ async function sendMessagePart({
       },
       body: new URLSearchParams({
         From: TWILIO_PHONE_NUMBER || '',
-        To: phoneNumber,
+        To: normalizedPhoneNumber,
         Body: body,
       }).toString(),
     });

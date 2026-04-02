@@ -2,24 +2,19 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, HardHat, Loader2, Phone } from 'lucide-react';
+import { Eye, EyeOff, HardHat, Loader2 } from 'lucide-react';
 
 import { useAuth, useFirestore, useUser } from '@/firebase';
 import { initiateEmailSignIn } from '@/firebase/non-blocking-login';
-import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { useToast } from '@/hooks/use-toast';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-
-const workerOrganizationOptions = ['Road Worker', 'Waste Worker', 'Engineer', 'Drainage Worker', 'Electricity Worker'];
+import { signOut } from 'firebase/auth';
 
 export default function WorkerLoginPage() {
   const auth = useAuth();
@@ -28,18 +23,9 @@ export default function WorkerLoginPage() {
   const { user } = useUser();
   const { toast } = useToast();
 
-  const [loginEmail, setLoginEmail] = useState('');
+  const [workerId, setWorkerId] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-
-  const [registerName, setRegisterName] = useState('');
-  const [registerEmail, setRegisterEmail] = useState('');
-  const [registerPhone, setRegisterPhone] = useState('');
-  const [registerOrganization, setRegisterOrganization] = useState('Road Worker');
-  const [registerPassword, setRegisterPassword] = useState('');
-  const [registerConfirmPassword, setRegisterConfirmPassword] = useState('');
-  const [employeeId, setEmployeeId] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
   const [hasCreatedSession, setHasCreatedSession] = useState(false);
@@ -60,11 +46,34 @@ export default function WorkerLoginPage() {
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
-    if (!auth) return;
+    if (!auth || !firestore) return;
 
     setIsLoggingIn(true);
     try {
-      await initiateEmailSignIn(auth, loginEmail, loginPassword);
+      const lookupResponse = await fetch('/api/worker/login-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workerId }),
+      });
+
+      const lookupData = await lookupResponse.json();
+
+      if (!lookupResponse.ok || !lookupData?.email) {
+        throw new Error(lookupData?.error || 'Worker ID not found. Contact admin.');
+      }
+
+      await initiateEmailSignIn(auth, lookupData.email, loginPassword);
+
+      if (!auth.currentUser) {
+        throw new Error('Login failed. Please try again.');
+      }
+
+      const workerDoc = await getDoc(doc(firestore, 'users', auth.currentUser.uid));
+
+      if (!workerDoc.exists() || workerDoc.data().role !== 'worker') {
+        await signOut(auth);
+        throw new Error('This account is not authorized for worker login.');
+      }
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -76,107 +85,32 @@ export default function WorkerLoginPage() {
     }
   }
 
-  async function handleRegister(event: React.FormEvent) {
-    event.preventDefault();
-    if (!auth || !firestore) return;
-
-    if (registerPassword !== registerConfirmPassword) {
-      toast({
-        variant: 'destructive',
-        title: 'Password mismatch',
-        description: 'Passwords do not match. Please try again.',
-      });
-      return;
-    }
-
-    if (registerPassword.length < 6) {
-      toast({
-        variant: 'destructive',
-        title: 'Weak password',
-        description: 'Password must be at least 6 characters.',
-      });
-      return;
-    }
-
-    setIsRegistering(true);
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, registerEmail, registerPassword);
-      const newUser = userCredential.user;
-      const userDocRef = doc(firestore, 'users', newUser.uid);
-
-      await setDocumentNonBlocking(
-        userDocRef,
-        {
-          id: newUser.uid,
-          email: newUser.email,
-          name: registerName,
-          phoneNumber: registerPhone,
-          organization: registerOrganization,
-          employeeId,
-          role: 'worker',
-          points: 0,
-          createdAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-
-      // Send SMS welcome message via API
-      try {
-        await fetch('/api/auth/send-sms', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            phoneNumber: registerPhone,
-            message: `Welcome to Worker Mobile App, ${registerName}! Your account has been created successfully. Login to view tasks and complete field jobs.`,
-          }),
-        });
-      } catch (smsError) {
-        console.error('SMS sending failed:', smsError);
-        // Don't fail registration if SMS fails
-      }
-
-      toast({
-        title: 'Registration successful',
-        description: 'Welcome to the Worker Mobile App. An SMS has been sent to your phone.',
-      });
-
-      router.push('/worker/dashboard');
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Registration failed',
-        description: error.message || 'Could not create account. Please try again.',
-      });
-    } finally {
-      setIsRegistering(false);
-    }
-  }
-
   useEffect(() => {
     if (user && firestore) {
-      const userDocRef = doc(firestore, 'users', user.uid);
-      setDocumentNonBlocking(
-        userDocRef,
-        {
-          id: user.uid,
-          email: user.email,
-          name: user.displayName || 'Field Worker',
-          role: 'worker',
-          points: 0,
-        },
-        { merge: true }
-      );
-      if (!hasCreatedSession) {
-        createServerSession()
-          .catch((error) => console.error('Failed to create worker session', error))
-          .finally(() => router.push('/worker/dashboard'));
-        return;
-      }
-      router.push('/worker/dashboard');
+      (async () => {
+        const workerDoc = await getDoc(doc(firestore, 'users', user.uid));
+        if (!workerDoc.exists() || workerDoc.data().role !== 'worker') {
+          await signOut(auth);
+          toast({
+            variant: 'destructive',
+            title: 'Unauthorized account',
+            description: 'Only workers added by admin can log in here.',
+          });
+          return;
+        }
+
+        if (!hasCreatedSession) {
+          createServerSession()
+            .catch((error) => console.error('Failed to create worker session', error))
+            .finally(() => router.push('/worker/dashboard'));
+          return;
+        }
+        router.push('/worker/dashboard');
+      })().catch((error) => {
+        console.error('Worker auth check failed', error);
+      });
     }
-  }, [user, firestore, router, hasCreatedSession]);
+  }, [user, firestore, router, hasCreatedSession, auth, toast]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50 dark:from-gray-900 dark:to-gray-800 p-4">
@@ -191,152 +125,58 @@ export default function WorkerLoginPage() {
           <CardDescription>Login, view tasks, upload proof, and complete field jobs from your dashboard.</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="login" className="w-full">
-            <TabsList className="mb-6 grid w-full grid-cols-2">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="register">Register</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="login">
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-email">Email</Label>
-                  <Input
-                    id="login-email"
-                    type="email"
-                    placeholder="worker@smc.gov.in"
-                    value={loginEmail}
-                    onChange={(event) => setLoginEmail(event.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-password">Password</Label>
-                  <div className="relative">
-                    <Input
-                      id="login-password"
-                      type={showPassword ? 'text' : 'password'}
-                      value={loginPassword}
-                      onChange={(event) => setLoginPassword(event.target.value)}
-                      required
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full px-3"
-                      onClick={() => setShowPassword(!showPassword)}
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                </div>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="worker-id">Worker ID</Label>
+              <Input
+                id="worker-id"
+                type="text"
+                placeholder="WRK-1234"
+                value={workerId}
+                onChange={(event) => setWorkerId(event.target.value.toUpperCase())}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="login-password">Password</Label>
+              <div className="relative">
+                <Input
+                  id="login-password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={loginPassword}
+                  onChange={(event) => setLoginPassword(event.target.value)}
+                  required
+                />
                 <Button
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600"
-                  disabled={isLoggingIn}
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-full px-3"
+                  onClick={() => setShowPassword(!showPassword)}
                 >
-                  {isLoggingIn ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Logging in...
-                    </>
-                  ) : (
-                    'Login'
-                  )}
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
-              </form>
-            </TabsContent>
+              </div>
+            </div>
+            <Button
+              type="submit"
+              className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600"
+              disabled={isLoggingIn}
+            >
+              {isLoggingIn ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Logging in...
+                </>
+              ) : (
+                'Login'
+              )}
+            </Button>
+          </form>
 
-            <TabsContent value="register">
-              <form onSubmit={handleRegister} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="register-name">Full Name</Label>
-                  <Input id="register-name" placeholder="John Doe" value={registerName} onChange={(event) => setRegisterName(event.target.value)} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="employee-id">Employee ID</Label>
-                  <Input id="employee-id" placeholder="SMC/FW/001" value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="register-email">Email</Label>
-                  <Input
-                    id="register-email"
-                    type="email"
-                    placeholder="your.name@smc.gov.in"
-                    value={registerEmail}
-                    onChange={(event) => setRegisterEmail(event.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="register-phone">Phone Number *</Label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="register-phone"
-                      type="tel"
-                      placeholder="+91 98765 43210"
-                      className="pl-9"
-                      value={registerPhone}
-                      onChange={(event) => setRegisterPhone(event.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Organization</Label>
-                  <Select value={registerOrganization} onValueChange={setRegisterOrganization}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select worker organization" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {workerOrganizationOptions.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="register-password">Password</Label>
-                  <Input
-                    id="register-password"
-                    type="password"
-                    placeholder="Min. 6 characters"
-                    value={registerPassword}
-                    onChange={(event) => setRegisterPassword(event.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="confirm-password">Confirm Password</Label>
-                  <Input
-                    id="confirm-password"
-                    type="password"
-                    value={registerConfirmPassword}
-                    onChange={(event) => setRegisterConfirmPassword(event.target.value)}
-                    required
-                  />
-                </div>
-                <Button
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600"
-                  disabled={isRegistering}
-                >
-                  {isRegistering ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating Account...
-                    </>
-                  ) : (
-                    'Create Account'
-                  )}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
+          <p className="mt-4 text-center text-xs text-muted-foreground">
+            Accounts are created by admin. Self-registration is disabled.
+          </p>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             <Link href="/" className="hover:underline">
