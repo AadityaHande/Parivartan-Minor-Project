@@ -23,16 +23,23 @@ export async function PUT(request: NextRequest) {
     const body = workerProfileUpdateSchema.parse(await request.json());
     const { firestore } = await getFirebaseAdmin();
 
-    await firestore.collection('users').doc(worker.uid).set(
-      {
-        ...body,
-        role: 'worker',
-        email: worker.email,
-        id: worker.uid,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    // Explicitly whitelist which fields can be updated (defense-in-depth)
+    // Prevent accidental updates to restricted fields like role, points, email
+    const allowedUpdates: Record<string, unknown> = {
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    if (body.name) {
+      allowedUpdates.name = body.name;
+    }
+    if (body.employeeId) {
+      allowedUpdates.employeeId = body.employeeId;
+    }
+    if (body.department) {
+      allowedUpdates.department = body.department;
+    }
+
+    await firestore.collection('users').doc(worker.uid).update(allowedUpdates);
 
     const updated = await firestore.collection('users').doc(worker.uid).get();
     return NextResponse.json({ worker: toSerializable({ id: updated.id, ...updated.data() }) });

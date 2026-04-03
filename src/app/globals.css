@@ -176,3 +176,37 @@ html {
 .pwa-installing {
   animation: fadeIn 0.3s ease-in-out;
 }
+
+/* Custom Google Translate integration: hide native UI chrome and prevent top-bar shifts. */
+.skiptranslate {
+  display: none !important;
+}
+
+.goog-te-banner-frame,
+.goog-te-gadget,
+.goog-te-gadget-simple,
+.goog-te-menu-frame,
+.goog-logo-link,
+.goog-te-balloon-frame,
+#goog-gt-tt {
+  display: none !important;
+}
+
+#google_translate_element {
+  position: fixed;
+  left: -9999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+body {
+  top: 0 !important;
+}
+
+iframe.goog-te-banner-frame {
+  display: none !important;
+}

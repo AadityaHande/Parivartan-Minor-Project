@@ -1,32 +1,72 @@
 'use client';
 
 import { useUser } from '@/firebase';
+import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
+import type { User as UserProfile } from '@/lib/types';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
+import { doc } from 'firebase/firestore';
 
 interface AuthGuardProps {
   children: React.ReactNode;
+  loginPath: string;
+  allowedRoles?: UserProfile['role'][];
+  publicPaths?: string[];
 }
 
-export default function AuthGuard({ children }: AuthGuardProps) {
+function getDefaultPathForRole(role: UserProfile['role']) {
+  if (role === 'worker') return '/worker/dashboard';
+  if (role === 'official' || role === 'department_head') return '/smc/dashboard';
+  return '/citizen/dashboard';
+}
+
+export default function AuthGuard({
+  children,
+  loginPath,
+  allowedRoles,
+  publicPaths,
+}: AuthGuardProps) {
   const { user, isUserLoading } = useUser();
+  const firestore = useFirestore();
   const router = useRouter();
   const pathname = usePathname();
 
-  useEffect(() => {
-    // Don't redirect if still loading or if on login page
-    if (isUserLoading) return;
-    if (pathname === '/citizen/login') return;
-    
-    // Redirect to login if not authenticated
-    if (!user) {
-      router.push('/citizen/login');
-    }
-  }, [user, isUserLoading, router, pathname]);
+  const isPublicPath = (publicPaths ?? [loginPath]).includes(pathname ?? '');
 
-  // Show loading while checking auth
-  if (isUserLoading) {
+  const userDocRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return doc(firestore, 'users', user.uid);
+  }, [firestore, user]);
+
+  const { data: userProfile, isLoading: isProfileLoading } = useDoc<UserProfile>(userDocRef);
+
+  const role = userProfile?.role;
+  const shouldCheckRole = !!allowedRoles && allowedRoles.length > 0;
+  const isRoleAllowed = !shouldCheckRole || (role ? allowedRoles.includes(role) : false);
+  const isChecking = isUserLoading || (!!user && shouldCheckRole && isProfileLoading);
+
+  useEffect(() => {
+    if (isChecking || isPublicPath) return;
+
+    if (!user) {
+      router.replace(loginPath);
+      return;
+    }
+
+    if (shouldCheckRole) {
+      if (!role) {
+        router.replace(loginPath);
+        return;
+      }
+
+      if (!isRoleAllowed) {
+        router.replace(getDefaultPathForRole(role));
+      }
+    }
+  }, [isChecking, isPublicPath, user, shouldCheckRole, role, isRoleAllowed, router, loginPath]);
+
+  if (isChecking) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="flex flex-col items-center gap-4">
@@ -37,23 +77,31 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  // If on login page, show the page regardless of auth status
-  if (pathname === '/citizen/login') {
+  if (isPublicPath) {
     return <>{children}</>;
   }
 
-  // If not authenticated, show loading (redirect will happen)
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-muted-foreground">Redirecting to login...</p>
+          <p className="text-muted-foreground">Redirecting to sign in...</p>
         </div>
       </div>
     );
   }
 
-  // Authenticated, show children
+  if (shouldCheckRole && !isRoleAllowed) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground">Redirecting to your portal...</p>
+        </div>
+      </div>
+    );
+  }
+
   return <>{children}</>;
 }

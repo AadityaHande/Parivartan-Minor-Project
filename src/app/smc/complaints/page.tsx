@@ -37,13 +37,13 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
-import { useCollection, useMemoFirebase, useUser } from '@/firebase';
-import { collection, query, orderBy, doc, updateDoc, arrayUnion, increment, getDocs, addDoc, getDoc, where } from 'firebase/firestore';
+import { useAuth, useCollection, useMemoFirebase, useUser } from '@/firebase';
+import { collection, query, orderBy, doc, updateDoc, arrayUnion, where } from 'firebase/firestore';
 import type { Report, ReportStatus, User } from '@/lib/types';
 import { useFirestore } from '@/firebase/provider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { isGenuineResolvedReport, getRewardOffer, buildRewardNotificationText } from '@/lib/reward-utils';
+import { buildAuthHeaders } from '@/lib/client-auth';
 
 const statusColors: Record<ReportStatus, string> = {
   Submitted: 'bg-blue-500',
@@ -80,6 +80,7 @@ function matchesSearch(report: Report, value: string) {
 export default function SmcComplaintsPage() {
   const [view, setView] = useState<ComplaintView>('active');
   const [search, setSearch] = useState('');
+  const auth = useAuth();
   const firestore = useFirestore();
   const { user } = useUser();
   const { toast } = useToast();
@@ -134,7 +135,7 @@ export default function SmcComplaintsPage() {
   }, [reports]);
 
   const handleUpdateStatus = async (report: Report, newStatus: ReportStatus, details?: { department?: string }) => {
-    if (!firestore || !user) {
+    if (!auth || !user) {
       toast({ variant: 'destructive', title: 'Authentication Error', description: 'You must be logged in.' });
       return;
     }
@@ -142,73 +143,30 @@ export default function SmcComplaintsPage() {
     const isReassignment = newStatus === 'Assigned' && details?.department;
     if (report.status === newStatus && !isReassignment) return;
 
-    const reportRef = doc(firestore, 'reports', report.id);
     try {
-      const updatePayload: Record<string, unknown> = { status: newStatus };
-      let notes = `Status updated to ${newStatus}.`;
+      const updatePayload: Record<string, unknown> = {};
+      let remarks = `Status updated to ${newStatus}.`;
 
       if (newStatus === 'Assigned' && details?.department) {
         updatePayload.department = details.department;
-        notes = `Quick-assigned to ${details.department} department based on AI suggestion.`;
+        remarks = `Quick-assigned to ${details.department} department based on AI suggestion.`;
       }
 
-      const newLogEntry = {
-        status: newStatus,
-        timestamp: new Date().toISOString(),
-        actor: 'Official' as const,
-        actorName: user.displayName || 'SMC Officer',
-        notes,
-      };
-      updatePayload.actionLog = arrayUnion(newLogEntry);
+      // Call atomic API endpoint for status changes
+      const headers = await buildAuthHeaders(auth, { 'Content-Type': 'application/json' });
+      const response = await fetch(`/api/smc/complaints/${report.id}/resolve`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          newStatus,
+          remarks,
+          updatePayload,
+        }),
+      });
 
-      await updateDoc(reportRef, updatePayload);
-
-      if (newStatus === 'Resolved' && report.status !== 'Resolved') {
-        const userToRewardRef = doc(firestore, 'users', report.userId);
-        await updateDoc(userToRewardRef, { points: increment(10) });
-
-        const resolvedReportsSnapshot = await getDocs(
-          query(
-            collection(firestore, 'reports'),
-            orderBy('timestamp', 'desc')
-          )
-        );
-
-        const resolvedReports = resolvedReportsSnapshot.docs
-          .map((reportDoc) => reportDoc.data() as Report)
-          .filter((item) => item.userId === report.userId && item.status === 'Resolved');
-        const qualifiedCount = resolvedReports.filter((item) => isGenuineResolvedReport(item)).length + 1;
-        const rewardOffer = getRewardOffer(qualifiedCount);
-
-        if (rewardOffer) {
-          const prizeMessage = buildRewardNotificationText(rewardOffer);
-          await addDoc(collection(firestore, 'notifications'), {
-            title: rewardOffer.title,
-            description: `${prizeMessage} Tap the dashboard to claim it.`,
-            createdAt: new Date().toISOString(),
-            createdBy: user?.displayName || 'System',
-            type: 'general',
-            isRead: false,
-            userId: report.userId,
-          });
-
-          try {
-            const userSnapshot = await getDoc(doc(firestore, 'users', report.userId));
-            const phoneNumber = userSnapshot.data()?.phoneNumber;
-            if (phoneNumber) {
-              await fetch('/api/auth/send-sms', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  phoneNumber,
-                  message: `${prizeMessage} Claim via Parivartan dashboard.`,
-                }),
-              });
-            }
-          } catch (smsError) {
-            console.error('Reward SMS failed:', smsError);
-          }
-        }
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update report status.');
       }
 
       toast({
@@ -220,7 +178,7 @@ export default function SmcComplaintsPage() {
       toast({
         variant: 'destructive',
         title: 'Update Failed',
-        description: 'Could not update the report status.',
+        description: error instanceof Error ? error.message : 'Could not update the report status.',
       });
     }
   };
@@ -250,9 +208,10 @@ export default function SmcComplaintsPage() {
       });
 
       if (worker.phoneNumber) {
+        const headers = await buildAuthHeaders(auth, { 'Content-Type': 'application/json' });
         await fetch('/api/auth/send-sms', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             phoneNumber: worker.phoneNumber,
             message: `New task assigned: ${report.description}. Location: ${report.location}.`,

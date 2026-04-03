@@ -1,5 +1,11 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Sun, Moon } from 'lucide-react';
+
+type ThemeMode = 'light' | 'dark';
+
 export default function ThemeToggle() {
   const [theme, setTheme] = useState<ThemeMode>('light');
   const [mounted, setMounted] = useState(false);

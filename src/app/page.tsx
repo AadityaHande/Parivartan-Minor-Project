@@ -8,8 +8,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useState, useEffect } from 'react';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useUser } from '@/firebase';
+import { useUser, useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { useRouter } from 'next/navigation';
+import { doc } from 'firebase/firestore';
+import type { User as UserProfile } from '@/lib/types';
+import LanguageSelector from '@/components/translation/language-selector';
 
 const featureCards = [
   {
@@ -65,19 +68,33 @@ export default function LandingPage() {
     const [showTeamModal, setShowTeamModal] = useState(false);
     const heroImage = PlaceHolderImages.find(img => img.id === 'hero-road') ?? PlaceHolderImages[0];
     const { user, isUserLoading } = useUser();
+    const firestore = useFirestore();
     const router = useRouter();
 
-    // Redirect to dashboard if user is logged in and has visited before
+    const userDocRef = useMemoFirebase(() => {
+      if (!firestore || !user) return null;
+      return doc(firestore, 'users', user.uid);
+    }, [firestore, user]);
+
+    const { data: userProfile, isLoading: isProfileLoading } = useDoc<UserProfile>(userDocRef);
+
+    function getPortalPath(role?: UserProfile['role']): string {
+      if (role === 'worker') return '/worker/dashboard';
+      if (role === 'official' || role === 'department_head') return '/smc/dashboard';
+      return '/citizen/dashboard';
+    }
+
+    // Redirect to the correct portal dashboard if user is already logged in
     useEffect(() => {
-      if (!isUserLoading && user) {
+      if (!isUserLoading && !isProfileLoading && user && userProfile !== undefined) {
         const hasVisitedBefore = localStorage.getItem('parivartan_visited');
         if (hasVisitedBefore) {
-          router.push('/citizen/dashboard');
+          router.push(getPortalPath(userProfile?.role));
         } else {
           localStorage.setItem('parivartan_visited', 'true');
         }
       }
-    }, [user, isUserLoading, router]);
+    }, [user, isUserLoading, userProfile, isProfileLoading, router]);
 
     // Scroll to portals section
     const scrollToPortals = () => {
@@ -115,9 +132,12 @@ export default function LandingPage() {
               About SMC
             </Link>
           </nav>
-          <Button onClick={scrollToPortals} className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 shadow-md">
-            Get Started
-          </Button>
+          <div className="flex items-center gap-2">
+            <LanguageSelector />
+            <Button onClick={scrollToPortals} className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 shadow-md">
+              Get Started
+            </Button>
+          </div>
         </div>
       </header>
 

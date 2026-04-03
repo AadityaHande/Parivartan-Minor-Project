@@ -108,10 +108,12 @@ export default function CitizenLoginPage() {
 
       // Send SMS welcome message via API
       try {
+        const idToken = await userCredential.user.getIdToken();
         await fetch('/api/auth/send-sms', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
           },
           body: JSON.stringify({
             phoneNumber: registerPhone,

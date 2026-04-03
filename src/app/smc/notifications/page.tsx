@@ -23,7 +23,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Bell, Plus, Send, MapPin, Image as ImageIcon, Trash2, Construction, AlertTriangle, Wrench, Info, Loader2 } from 'lucide-react';
-import { useCollection, useMemoFirebase, useUser } from '@/firebase';
+import { useAuth, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { useFirestore } from '@/firebase/provider';
 import { collection, query, orderBy, deleteDoc, doc, getDocs } from 'firebase/firestore';
 import { addDocumentNonBlocking } from '@/firebase/non-blocking-updates';
@@ -31,6 +31,7 @@ import type { Notification } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
+import { buildAuthHeaders } from '@/lib/client-auth';
 
 const typeConfig = {
   road_construction: { icon: Construction, label: 'Road Construction', color: 'bg-orange-500' },
@@ -40,6 +41,7 @@ const typeConfig = {
 };
 
 export default function NotificationsManagementPage() {
+  const auth = useAuth();
   const firestore = useFirestore();
   const { user } = useUser();
   const { toast } = useToast();
@@ -96,11 +98,10 @@ export default function NotificationsManagementPage() {
           )
         );
 
+        const headers = await buildAuthHeaders(auth, { 'Content-Type': 'application/json' });
         const smsResponse = await fetch('/api/notifications/send-sms', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers,
           body: JSON.stringify({
             title: notificationData.title,
             description: notificationData.description,

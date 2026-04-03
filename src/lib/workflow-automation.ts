@@ -163,8 +163,9 @@ export function createAutomatedActionLog(
   return {
     status: workflow.autoAssign ? 'Assigned' as const : 'Under Verification' as const,
     timestamp: new Date().toISOString(),
-    officer: 'AI System',
-    remarks: workflow.autoAssign
+    actor: 'System' as const,
+    actorName: 'AI System',
+    notes: workflow.autoAssign
       ? `Automatically assigned to ${workflow.suggestedDepartment} department${assignedWorker ? ` - ${assignedWorker}` : ''}. Priority: ${workflow.suggestedPriority}. Estimated resolution: ${workflow.estimatedResolutionTime}.`
       : `Report submitted for verification. Suggested department: ${workflow.suggestedDepartment}, Priority: ${workflow.suggestedPriority}.`,
   };

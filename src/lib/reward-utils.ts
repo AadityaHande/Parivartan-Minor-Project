@@ -13,10 +13,16 @@ export type RewardOffer = {
 export function isGenuineResolvedReport(report: Report): boolean {
   if (report.status !== 'Resolved') return false;
 
+  // A report is genuine if:
+  // 1. AI analysis explicitly verified it as genuine, OR
+  // 2. Official explicitly verified it (has official verification action log entry)
   const verifiedByAi = report.aiAnalysis?.verificationSuggestion?.toLowerCase().includes('genuine');
-  const hasOfficialTrail = Array.isArray(report.actionLog) && report.actionLog.length > 0;
+  
+  // Check if an official verified this report (look for 'Official' actor in action log)
+  const officialVerified = Array.isArray(report.actionLog) && 
+    report.actionLog.some(entry => entry.actor === 'Official');
 
-  return Boolean(verifiedByAi || hasOfficialTrail);
+  return Boolean(verifiedByAi || officialVerified);
 }
 
 export function getQualifiedResolvedReportCount(reports: Report[], userId: string): number {

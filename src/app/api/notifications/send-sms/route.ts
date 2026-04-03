@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendBulkSMS } from '@/lib/twilio';
+import { requireRequestIdentity, RequestAuthError } from '@/lib/server-auth';
 
 /**
  * POST /api/notifications/send-sms
@@ -7,6 +8,8 @@ import { sendBulkSMS } from '@/lib/twilio';
  */
 export async function POST(request: NextRequest) {
   try {
+    await requireRequestIdentity(request, ['official', 'department_head']);
+
     const { title, description, location, phoneNumbers } = await request.json();
 
     if (!description) {
@@ -22,9 +25,9 @@ export async function POST(request: NextRequest) {
 
     if (recipientNumbers.length === 0) {
       return NextResponse.json(
-        { 
-          success: true, 
-          message: 'Notification stored but no phone numbers found for SMS' 
+        {
+          success: true,
+          message: 'Notification stored but no phone numbers found for SMS'
         },
         { status: 200 }
       );
@@ -34,10 +37,8 @@ export async function POST(request: NextRequest) {
       location ? ` Location: ${location}` : ''
     }`;
 
-    // Send SMS to all recipients
     const smsResults = await sendBulkSMS(recipientNumbers, message);
 
-    // Count successes/failures
     const successCount = smsResults.filter((r) => r.success).length;
     const failureCount = smsResults.filter((r) => !r.success).length;
 
@@ -55,6 +56,10 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
+    if (error instanceof RequestAuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
     console.error('Error sending SMS notifications:', error);
     return NextResponse.json(
       {

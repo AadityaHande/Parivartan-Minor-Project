@@ -453,8 +453,7 @@ export default function ReportProblemPage() {
                                 src={capturedImage}
                                 alt="Captured evidence"
                                 fill
-                                objectFit="cover"
-                                className="rounded-md"
+                                className="rounded-md object-cover"
                               />
                              <Button
                                 type="button"
@@ -616,9 +615,7 @@ export default function ReportProblemPage() {
           </Form>
         </CardContent>
       </Card>
-      <div className="hidden">
-        <canvas ref={canvasRef}></canvas>
-      </div>
+
     </div>
   );
 }

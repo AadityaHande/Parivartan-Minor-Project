@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useCollection, useMemoFirebase, useFirestore } from '@/firebase';
+import { useAuth, useCollection, useMemoFirebase, useFirestore } from '@/firebase';
 import { collection, query } from 'firebase/firestore';
 import type { Report } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { buildAuthHeaders } from '@/lib/client-auth';
 
 const DEPARTMENT_OPTIONS = ['Engineering', 'Drainage', 'Electricity', 'Sanitation', 'Roads'];
 const SKILL_OPTIONS = ['Garbage', 'Road Repair', 'Electrical'];
@@ -34,6 +35,7 @@ interface ContractorRecord {
 }
 
 export default function SmcContractsPage() {
+  const auth = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
   const [isCreatingContractor, setIsCreatingContractor] = useState(false);
@@ -150,9 +152,10 @@ export default function SmcContractsPage() {
 
     setIsCreatingContractor(true);
     try {
+      const headers = await buildAuthHeaders(auth, { 'Content-Type': 'application/json' });
       const response = await fetch('/api/smc/contractors', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(newContractor),
       });
       const data = await response.json();
@@ -205,9 +208,10 @@ export default function SmcContractsPage() {
 
     setIsCreatingWorker(true);
     try {
+      const headers = await buildAuthHeaders(auth, { 'Content-Type': 'application/json' });
       const response = await fetch('/api/smc/workers', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(newWorker),
       });
 

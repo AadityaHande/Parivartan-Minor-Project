@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFirebaseAdmin } from '@/firebase/server';
+import { requireRequestIdentity, RequestAuthError } from '@/lib/server-auth';
 
 const DEPARTMENTS = ['Engineering', 'Drainage', 'Electricity', 'Sanitation', 'Roads'];
 
@@ -9,6 +10,8 @@ function normalizeSegment(value: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    await requireRequestIdentity(request, ['official', 'department_head']);
+
     const body = await request.json();
 
     const name = normalizeSegment(String(body.name || ''));
@@ -48,6 +51,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, id: created.id });
   } catch (error) {
+    if (error instanceof RequestAuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
     console.error('Failed to create contractor:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Contractor creation failed.' },

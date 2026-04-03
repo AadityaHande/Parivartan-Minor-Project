@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ZodError } from 'zod';
+import type { QueryDocumentSnapshot } from 'firebase-admin/firestore';
 
 import { getFirebaseAdmin } from '@/firebase/server';
 import { createActionLog, isAssignedToWorker, isOpenLowPriorityTask, nowTimestamp, summarizePerformance, toSerializable } from '@/lib/worker-api';
@@ -31,10 +32,10 @@ export async function getWorkerReports(request: NextRequest) {
   const worker = await requireWorkerIdentity(request);
   const { firestore } = await getFirebaseAdmin();
   const snapshot = await firestore.collection('reports').get();
-  const reports = snapshot.docs.map((doc) => ({ ...(doc.data() as Report), id: doc.id }));
+  const reports = snapshot.docs.map((doc: QueryDocumentSnapshot): Report => ({ ...(doc.data() as Report), id: doc.id }));
 
-  const assignedReports = reports.filter((report) => isAssignedToWorker(report, worker.uid, worker.name));
-  const openLowPriority = reports.filter(isOpenLowPriorityTask);
+  const assignedReports = reports.filter((report: Report) => isAssignedToWorker(report, worker.uid, worker.name));
+  const openLowPriority = reports.filter((report: Report) => isOpenLowPriorityTask(report));
 
   return {
     worker,
