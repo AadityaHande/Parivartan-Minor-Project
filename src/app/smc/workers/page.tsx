@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
+import { useAuth, useCollection, useFirestore, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import type { User } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,8 +13,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { buildAuthHeaders } from '@/lib/client-auth';
 
 export default function SmcWorkersPage() {
+  const auth = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
   const [organizationFilter, setOrganizationFilter] = useState('all');
@@ -63,8 +65,10 @@ export default function SmcWorkersPage() {
     setDeletingWorkerId(worker.id);
 
     try {
+      const headers = await buildAuthHeaders(auth);
       const response = await fetch(`/api/smc/workers/${encodeURIComponent(worker.id)}`, {
         method: 'DELETE',
+        headers,
       });
       const data = await response.json();
 

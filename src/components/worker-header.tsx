@@ -17,6 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import LanguageSelector from '@/components/translation/language-selector';
 
 export default function WorkerHeader() {
   const firestore = useFirestore();
@@ -62,6 +63,8 @@ export default function WorkerHeader() {
 
         {/* Right side: Notifications and User */}
         <div className="flex items-center gap-2">
+          <LanguageSelector className="hidden sm:inline-flex" />
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-9 w-9 relative">
@@ -108,6 +111,8 @@ export default function WorkerHeader() {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <LanguageSelector className="sm:hidden" />
           <UserNav />
         </div>
       </div>

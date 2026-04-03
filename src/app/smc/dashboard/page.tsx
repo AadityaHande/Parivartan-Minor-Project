@@ -177,9 +177,9 @@ export default function SmcDashboard() {
   const resolvedChange = stats.resolved > 0 ? '+8%' : '0%';
 
   return (
-    <main className="flex flex-1 flex-col gap-6 p-2">
+    <main className="flex flex-1 flex-col gap-4">
       {/* Welcome Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Dashboard Overview</h1>
           <p className="text-muted-foreground">Real-time insights into road infrastructure reports</p>
@@ -202,11 +202,11 @@ export default function SmcDashboard() {
 
       {/* Stats Cards - Enhanced Design */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg">
+        <Card className="relative overflow-hidden border border-border/50 bg-gradient-to-br from-blue-500/90 to-blue-600/90 text-white shadow-sm">
           <div className="absolute top-0 right-0 -mt-4 -mr-4 h-24 w-24 rounded-full bg-white/10" />
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
             <CardTitle className="text-sm font-medium text-white/90">Total Reports</CardTitle>
-            <div className="rounded-full bg-white/20 p-2">
+            <div className="rounded-full bg-white/20 p-1.5">
               <FileText className="h-4 w-4" />
             </div>
           </CardHeader>
@@ -220,11 +220,11 @@ export default function SmcDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-lg">
+        <Card className="relative overflow-hidden border border-border/50 bg-gradient-to-br from-amber-500/90 to-orange-500/90 text-white shadow-sm">
           <div className="absolute top-0 right-0 -mt-4 -mr-4 h-24 w-24 rounded-full bg-white/10" />
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
             <CardTitle className="text-sm font-medium text-white/90">Pending Action</CardTitle>
-            <div className="rounded-full bg-white/20 p-2">
+            <div className="rounded-full bg-white/20 p-1.5">
               <AlertTriangle className="h-4 w-4" />
             </div>
           </CardHeader>
@@ -239,11 +239,11 @@ export default function SmcDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-purple-500 to-indigo-600 text-white shadow-lg">
+        <Card className="relative overflow-hidden border border-border/50 bg-gradient-to-br from-violet-500/85 to-indigo-600/85 text-white shadow-sm">
           <div className="absolute top-0 right-0 -mt-4 -mr-4 h-24 w-24 rounded-full bg-white/10" />
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
             <CardTitle className="text-sm font-medium text-white/90">In Progress</CardTitle>
-            <div className="rounded-full bg-white/20 p-2">
+            <div className="rounded-full bg-white/20 p-1.5">
               <Clock className="h-4 w-4" />
             </div>
           </CardHeader>
@@ -257,11 +257,11 @@ export default function SmcDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-lg">
+        <Card className="relative overflow-hidden border border-border/50 bg-gradient-to-br from-emerald-500/90 to-green-600/90 text-white shadow-sm">
           <div className="absolute top-0 right-0 -mt-4 -mr-4 h-24 w-24 rounded-full bg-white/10" />
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
             <CardTitle className="text-sm font-medium text-white/90">Resolved</CardTitle>
-            <div className="rounded-full bg-white/20 p-2">
+            <div className="rounded-full bg-white/20 p-1.5">
               <CheckCircle className="h-4 w-4" />
             </div>
           </CardHeader>
@@ -278,15 +278,15 @@ export default function SmcDashboard() {
       </div>
 
       {/* Maharashtra Map Section - Full Width */}
-      <Card className="overflow-hidden shadow-lg border-0">
-        <CardHeader className="bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-500 text-white">
+      <Card className="overflow-hidden border border-border/60 shadow-sm">
+        <CardHeader className="bg-gradient-to-r from-blue-600/90 via-blue-500/90 to-indigo-500/90 py-3 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <MapPin className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2 text-base text-white">
+                <MapPin className="h-4 w-4" />
                 Maharashtra - Citizen Report Locations
               </CardTitle>
-              <CardDescription className="text-white/80">
+              <CardDescription className="mt-0.5 text-white/80">
                 Live tracking of all reported issues across Maharashtra
               </CardDescription>
             </div>
@@ -297,15 +297,15 @@ export default function SmcDashboard() {
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
-            <Skeleton className="h-[500px] w-full" />
+            <Skeleton className="h-[420px] w-full md:h-[440px]" />
           ) : (
-            <div className="h-[500px]">
+            <div className="h-[420px] md:h-[440px]">
               <HeatMap 
                 data={stats.heatMapData.map(point => ({
                   lat: point.lat,
                   lng: point.lng,
                   count: point.count,
-                  location: point.area,
+                  location: point.location,
                 }))}
               />
             </div>
@@ -314,9 +314,9 @@ export default function SmcDashboard() {
       </Card>
 
       {/* Charts Row */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         {/* Timeline Chart */}
-        <Card className="shadow-lg">
+        <Card className="shadow-sm">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -399,7 +399,7 @@ export default function SmcDashboard() {
         </Card>
 
         {/* Top Locations Bar Chart */}
-        <Card className="shadow-lg">
+        <Card className="shadow-sm">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFirebaseAdmin } from '@/firebase/server';
 import { sendSMS } from '@/lib/twilio';
+import { requireRequestIdentity, RequestAuthError } from '@/lib/server-auth';
+import type { Firestore } from 'firebase-admin/firestore';
 
 const DEPARTMENTS = ['Engineering', 'Drainage', 'Electricity', 'Sanitation', 'Roads'];
 const SKILL_TYPES = ['Garbage', 'Road Repair', 'Electrical'];
@@ -13,6 +15,11 @@ function normalizePhoneNumber(value: string) {
   const compact = value.replace(/[\s()-]/g, '');
 
   if (compact.startsWith('+')) {
+    // Already in international format, validate length
+    const digitsOnly = compact.replace(/\D/g, '');
+    if (digitsOnly.length < 10 || digitsOnly.length > 15) {
+      throw new Error('Phone number has invalid length after normalization');
+    }
     return compact;
   }
 
@@ -26,7 +33,8 @@ function normalizePhoneNumber(value: string) {
     return `+${digitsOnly}`;
   }
 
-  return compact;
+  // Invalid format
+  throw new Error(`Phone number must be 10 digits or include country code. Got ${digitsOnly.length} digits.`);
 }
 
 function generatePassword(length = 8) {
@@ -38,7 +46,7 @@ function generatePassword(length = 8) {
   return output;
 }
 
-async function generateWorkerId(firestore: FirebaseFirestore.Firestore) {
+async function generateWorkerId(firestore: Firestore) {
   for (let attempt = 0; attempt < 15; attempt += 1) {
     const serial = Math.floor(1000 + Math.random() * 9000);
     const candidate = `WRK-${serial}`;
@@ -59,6 +67,8 @@ async function generateWorkerId(firestore: FirebaseFirestore.Firestore) {
 
 export async function POST(request: NextRequest) {
   try {
+    await requireRequestIdentity(request, ['official', 'department_head']);
+
     const body = await request.json();
 
     const fullName = normalizeSegment(String(body.fullName || ''));
@@ -142,6 +152,10 @@ export async function POST(request: NextRequest) {
       smsStatus,
     });
   } catch (error) {
+    if (error instanceof RequestAuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
     console.error('Failed to create worker account:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Worker creation failed.' },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendSMS } from '@/lib/twilio';
+import { requireRequestIdentity, RequestAuthError } from '@/lib/server-auth';
 
 /**
  * POST /api/auth/send-sms
@@ -7,6 +8,8 @@ import { sendSMS } from '@/lib/twilio';
  */
 export async function POST(request: NextRequest) {
   try {
+    await requireRequestIdentity(request);
+
     const { phoneNumber, message } = await request.json();
 
     if (!phoneNumber || !message) {
@@ -23,7 +26,6 @@ export async function POST(request: NextRequest) {
 
     if (!result.success) {
       console.warn('SMS sending warning:', result.error);
-      // Don't fail the request, just log the warning
       return NextResponse.json(
         {
           success: true,
@@ -41,6 +43,10 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
+    if (error instanceof RequestAuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
     console.error('Error sending SMS:', error);
     return NextResponse.json(
       {

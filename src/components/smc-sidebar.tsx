@@ -11,6 +11,7 @@ import { useAuth } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
+import LanguageSelector from '@/components/translation/language-selector';
 
 export default function SmcSidebar() {
   const pathname = usePathname();
@@ -29,7 +30,7 @@ export default function SmcSidebar() {
   };
 
   const navContent = (
-    <nav className="flex flex-col gap-1 px-3">
+    <nav className="flex flex-col gap-0.5 px-2.5">
       {smcNavItems.map((item) => {
         const isActive = pathname.startsWith(item.href);
         return (
@@ -37,14 +38,14 @@ export default function SmcSidebar() {
             key={item.href}
             href={item.href}
             className={cn(
-              'group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
+              'group flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200',
               isActive 
-                ? 'bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-md' 
+                ? 'bg-gradient-to-r from-primary to-primary/90 text-primary-foreground shadow-sm' 
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground'
             )}
           >
             <span className={cn(
-              'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
+              'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
               isActive ? 'bg-white/20' : 'bg-muted group-hover:bg-background'
             )}>
               {item.icon}
@@ -60,36 +61,38 @@ export default function SmcSidebar() {
   return (
     <>
       {/* Desktop Sidebar */}
-      <div className="hidden w-72 border-r bg-card md:block">
+      <div className="hidden w-64 border-r bg-card md:block">
         <div className="flex h-full max-h-screen flex-col">
           {/* Header */}
-          <div className="flex h-16 items-center gap-3 border-b px-6">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-md">
-              <Shield className="h-5 w-5" />
+          <div className="flex h-14 items-center gap-2.5 border-b px-4">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-sm">
+              <Shield className="h-4 w-4" />
             </div>
             <div className="flex flex-col">
-              <span className="text-sm font-bold tracking-tight">PMC Admin</span>
+              <span className="text-[13px] font-bold tracking-tight">PMC Admin</span>
               <span className="text-xs text-muted-foreground">Control Panel</span>
             </div>
           </div>
           
           {/* Navigation */}
-          <div className="flex-1 overflow-y-auto py-4">
+          <div className="flex-1 overflow-y-auto py-3">
             {navContent}
           </div>
           
           {/* Footer */}
-          <div className="border-t p-4 space-y-3">
-            <div className="flex items-center gap-3 rounded-xl bg-muted/50 p-3">
+          <div className="space-y-2.5 border-t p-3">
+            <LanguageSelector className="h-9 w-full justify-between rounded-lg text-[13px]" />
+
+            <div className="flex items-center gap-2.5 rounded-lg bg-muted/50 p-2.5">
               <UserNav />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">Administrator</p>
+                <p className="truncate text-sm font-medium">Administrator</p>
                 <p className="text-xs text-muted-foreground">Manage system</p>
               </div>
             </div>
             <Button 
               variant="ghost" 
-              className="w-full justify-start gap-3 text-destructive hover:text-destructive hover:bg-destructive/10 rounded-xl h-11"
+              className="h-10 w-full justify-start gap-2.5 rounded-lg text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={handleLogout}
             >
               <LogOut className="h-4 w-4" />
@@ -100,7 +103,7 @@ export default function SmcSidebar() {
       </div>
       
       {/* Mobile Header */}
-      <header className="flex h-14 items-center justify-between gap-4 border-b bg-card px-4 md:hidden">
+      <header className="flex h-14 items-center justify-between gap-3 border-b bg-card px-3.5 md:hidden">
         <Sheet>
           <SheetTrigger asChild>
             <Button variant="ghost" size="icon" className="shrink-0">
@@ -108,25 +111,25 @@ export default function SmcSidebar() {
               <span className="sr-only">Toggle navigation menu</span>
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="flex flex-col w-72 p-0">
-            <SheetHeader className="border-b px-6 py-4">
+          <SheetContent side="left" className="flex w-64 flex-col p-0">
+            <SheetHeader className="border-b px-4 py-3">
               <SheetTitle className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground">
-                  <Shield className="h-5 w-5" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/80 text-primary-foreground">
+                  <Shield className="h-4 w-4" />
                 </div>
                 <div className="flex flex-col items-start">
-                  <span className="text-sm font-bold">PMC Admin</span>
+                  <span className="text-[13px] font-bold">PMC Admin</span>
                   <span className="text-xs text-muted-foreground font-normal">Control Panel</span>
                 </div>
               </SheetTitle>
             </SheetHeader>
-            <div className="flex-1 overflow-y-auto py-4">
+            <div className="flex-1 overflow-y-auto py-3">
               {navContent}
             </div>
-            <div className="border-t p-4">
+            <div className="border-t p-3">
               <Button 
                 variant="ghost" 
-                className="w-full justify-start gap-3 text-destructive hover:text-destructive hover:bg-destructive/10 rounded-xl h-11"
+                className="h-10 w-full justify-start gap-2.5 rounded-lg text-destructive hover:bg-destructive/10 hover:text-destructive"
                 onClick={handleLogout}
               >
                 <LogOut className="h-4 w-4" />
@@ -136,14 +139,15 @@ export default function SmcSidebar() {
           </SheetContent>
         </Sheet>
         
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground">
+        <div className="flex items-center gap-1.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-primary to-primary/80 text-primary-foreground">
             <Shield className="h-4 w-4" />
           </div>
-          <span className="font-semibold text-sm">PMC Admin</span>
+          <span className="text-sm font-semibold">PMC Admin</span>
         </div>
         
         <div className="flex items-center gap-2">
+          <LanguageSelector className="hidden sm:inline-flex" />
           <Button 
             variant="ghost" 
             size="icon"
@@ -152,6 +156,7 @@ export default function SmcSidebar() {
           >
             <LogOut className="h-5 w-5" />
           </Button>
+          <LanguageSelector className="sm:hidden" />
           <UserNav />
         </div>
       </header>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getWorkerReports, handleApiError, workerSummary } from '@/app/api/worker/_utils';
+import type { Report } from '@/lib/types';
 
 export const runtime = 'nodejs';
 
@@ -10,9 +11,9 @@ export async function GET(request: NextRequest) {
     const summary = workerSummary(assignedReports);
 
     return NextResponse.json({
-      assignedActive: assignedReports.filter((report) => report.status === 'Assigned' || report.status === 'In Progress').length,
+      assignedActive: assignedReports.filter((report: Report) => report.status === 'Assigned' || report.status === 'In Progress').length,
       openLowPriority: openLowPriority.length,
-      pendingBeforeUpload: assignedReports.filter((report) => report.status === 'Assigned' && !report.beforeWorkMediaUrl).length,
+      pendingBeforeUpload: assignedReports.filter((report: Report) => report.status === 'Assigned' && !report.beforeWorkMediaUrl).length,
       ...summary,
     });
   } catch (error) {

@@ -3,8 +3,24 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getWorkerReport, handleApiError, handleNotFound, serializableReport, timestampNow, workerLog } from '@/app/api/worker/_utils';
 import { workerStatusUpdateSchema } from '@/lib/worker-api';
+import type { ReportStatus } from '@/lib/types';
 
 export const runtime = 'nodejs';
+
+// Valid status transitions for worker tasks
+const VALID_TRANSITIONS: Record<ReportStatus, ReportStatus[]> = {
+  'Submitted': ['Assigned', 'Submitted'],
+  'Assigned': ['In Progress', 'Rejected', 'Assigned'],
+  'In Progress': ['Resolved', 'Assigned', 'In Progress'],
+  'Resolved': ['Resolved'], // Cannot transition away from resolved
+  'Under Verification': ['Assigned', 'Resolved', 'Rejected'],
+  'Rejected': ['Submitted', 'Rejected'],
+};
+
+function isValidTransition(fromStatus: ReportStatus, toStatus: ReportStatus): boolean {
+  const allowed = VALID_TRANSITIONS[fromStatus] || [];
+  return allowed.includes(toStatus);
+}
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -15,6 +31,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     const body = workerStatusUpdateSchema.parse(await request.json());
+    const currentStatus = report.status as ReportStatus;
+
+    // Validate status transition
+    if (!isValidTransition(currentStatus, body.status)) {
+      return NextResponse.json(
+        { error: `Invalid status transition from ${currentStatus} to ${body.status}. Allowed transitions: ${VALID_TRANSITIONS[currentStatus]?.join(', ') || 'none'}` },
+        { status: 400 }
+      );
+    }
+
     const updatePayload: Record<string, unknown> = {
       status: body.status,
       workerAssignmentStatus: body.status === 'Rejected' ? 'Rejected' : 'Accepted',

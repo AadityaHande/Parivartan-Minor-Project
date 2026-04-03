@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
 import { MapPin, User, Calendar, Bot, Loader2, Shield, AlertTriangle, Sparkles } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
-import { useDoc, useMemoFirebase, useUser } from '@/firebase';
+import { useAuth, useDoc, useMemoFirebase, useUser } from '@/firebase';
 import { collection, doc, DocumentData, DocumentReference, updateDoc, arrayUnion, increment, getDocs, query, where, addDoc, getDoc } from 'firebase/firestore';
 import { useFirestore } from '@/firebase/provider';
 import type { Report, ReportStatus, AIAnalysis } from '@/lib/types';
@@ -33,6 +33,7 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { useParams } from 'next/navigation';
 import { summarizeReportFlow } from '@/ai/flows/summarize-report-flow';
 import ReactMarkdown from 'react-markdown';
+import { buildAuthHeaders } from '@/lib/client-auth';
 
 
 const statusColors: { [key: string]: string } = {
@@ -46,7 +47,7 @@ const statusColors: { [key: string]: string } = {
 
 const officerActionableStatuses: ReportStatus[] = ['Under Verification', 'Assigned', 'In Progress', 'Resolved', 'Rejected'];
 const severityLevels: (AIAnalysis['severity'])[] = ['Low', 'Medium', 'High'];
-const priorityLevels: (Report['priority'])[] = ['Low', 'Medium', 'High', 'Critical'];
+const priorityLevels: NonNullable<Report['priority']>[] = ['Low', 'Medium', 'High', 'Critical'];
 import { departments } from '@/lib/constants';
 
 const causeTags = ['Rain / Flood', 'Construction', 'Utility Work', 'Heavy Load', 'Poor Quality', 'Other'];
@@ -77,6 +78,7 @@ type OfficerActionForm = z.infer<typeof officerActionSchema>;
 
 export default function SmcComplaintDetailPage() {
   const params = useParams<{ id: string }>();
+  const auth = useAuth();
   const firestore = useFirestore();
   const { toast } = useToast();
   const { user } = useUser();
@@ -164,105 +166,61 @@ export default function SmcComplaintDetailPage() {
 
 
   async function onSubmit(values: OfficerActionForm) {
-    if (!reportRef || !report || !firestore) return;
+    if (!reportRef || !report) return;
 
     setIsSubmitting(true);
     try {
-        if (values.status === 'Resolved' && report.status !== 'Resolved') {
-            const userToRewardRef = doc(firestore, 'users', report.userId);
-            // This is fire-and-forget, but we can log errors
-            updateDoc(userToRewardRef, {
-                points: increment(10)
-            }).catch(err => console.error("Failed to award points:", err));
-        }
+      const hasStatusChanged = report.status !== values.status;
 
-        const hasStatusChanged = report.status !== values.status;
-        const updatePayload: any = {
-            status: values.status,
+      const updatePayload: Record<string, unknown> = {
+        remarks: values.remarks,
+        department: values.department,
+        causeTag: values.causeTag,
+        assignedContractor: values.assignedContractor,
+        priority: values.priority,
+        estimatedResolutionTime: values.estimatedResolutionTime,
+        afterImageUrl: values.afterImageUrl || null,
+      };
+
+      if (values.severity && report?.aiAnalysis) {
+        updatePayload['aiAnalysis.severity'] = values.severity;
+      }
+
+      // Use atomic API endpoint for status changes (especially Resolved)
+      if (hasStatusChanged) {
+        const headers = await buildAuthHeaders(auth, { 'Content-Type': 'application/json' });
+        const response = await fetch(`/api/smc/complaints/${report.id}/resolve`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            newStatus: values.status as ReportStatus,
             remarks: values.remarks,
-            department: values.department,
-            causeTag: values.causeTag,
-            assignedContractor: values.assignedContractor,
-            priority: values.priority,
-            estimatedResolutionTime: values.estimatedResolutionTime,
-            afterImageUrl: values.afterImageUrl || null,
-        };
+            updatePayload,
+          }),
+        });
 
-        if (values.severity && report?.aiAnalysis) {
-            updatePayload['aiAnalysis.severity'] = values.severity;
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to update report.');
         }
-
-        if (hasStatusChanged) {
-            const newLogEntry = {
-                status: values.status as ReportStatus,
-                timestamp: new Date().toISOString(),
-                actor: 'Official' as const,
-                actorName: user?.displayName || 'SMC Officer',
-                notes: values.remarks || `Status updated to ${values.status}.`,
-            };
-            updatePayload.actionLog = arrayUnion(newLogEntry);
-        }
-
+      } else {
+        // For non-status changes, update directly (no atomicity requirement)
         await updateDoc(reportRef, updatePayload);
+      }
 
-                        if (values.status === 'Resolved' && report.status !== 'Resolved') {
-                                const resolvedReportsSnapshot = await getDocs(
-                                    query(
-                                        collection(firestore, 'reports'),
-                                        where('userId', '==', report.userId),
-                                        where('status', '==', 'Resolved')
-                                    )
-                                );
-
-                                const resolvedReports = resolvedReportsSnapshot.docs.map((reportDoc) => reportDoc.data() as Report);
-                                const qualifiedCount = resolvedReports.filter((item) => isGenuineResolvedReport(item)).length + 1;
-                                const rewardOffer = getRewardOffer(qualifiedCount);
-
-                                if (rewardOffer) {
-                                    const prizeMessage = buildRewardNotificationText(rewardOffer);
-                                    await addDoc(collection(firestore, 'notifications'), {
-                                        title: rewardOffer.title,
-                                        description: `${prizeMessage} Tap the dashboard to claim it.`,
-                                        createdAt: new Date().toISOString(),
-                                        createdBy: user?.displayName || 'System',
-                                        type: 'general',
-                                        isRead: false,
-                                        userId: report.userId,
-                                    });
-
-                                    try {
-                                        const userSnapshot = await getDoc(doc(firestore, 'users', report.userId));
-                                        const phoneNumber = userSnapshot.data()?.phoneNumber;
-                                        if (phoneNumber) {
-                                            await fetch('/api/auth/send-sms', {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({
-                                                    phoneNumber,
-                                                    message: `${prizeMessage} Claim via Parivartan dashboard.`,
-                                                }),
-                                            });
-                                        }
-                                    } catch (smsError) {
-                                        console.error('Reward SMS failed:', smsError);
-                                    }
-                                }
-                        }
-        
-        toast({
-            title: 'Report Updated',
-            description: `The report has been successfully updated.`,
-        });
-
+      toast({
+        title: 'Report Updated',
+        description: `The report has been successfully updated.`,
+      });
     } catch (error) {
-         toast({
-            variant: 'destructive',
-            title: 'Update Failed',
-            description: 'Could not update the report. You may not have the required permissions.',
-        });
-        console.error("Update failed: ", error);
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: 'Could not update the report. You may not have the required permissions.',
+      });
+      console.error('Update failed: ', error);
     } finally {
-        setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   }
   

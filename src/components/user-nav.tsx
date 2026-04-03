@@ -56,27 +56,37 @@ export default function UserNav() {
     })
   };
 
-  // Create user document in Firestore on first login for Google users
+  // Sync profile info for Google sign-in users.
+  // IMPORTANT: Only set role:'citizen' for BRAND NEW users — never overwrite
+  // an existing role, which would silently downgrade a worker or official.
   useEffect(() => {
-    if (user && firestore) {
+    if (user && firestore && !isProfileLoading) {
       const isGoogleUser = user.providerData.some(
         (provider) => provider.providerId === GoogleAuthProvider.PROVIDER_ID
       );
 
-      // Only create/update the document if the user logged in with Google.
-      // The demo email/password logins are handled on their respective pages.
       if (isGoogleUser) {
         const userDocRef = doc(firestore, 'users', user.uid);
-        setDocumentNonBlocking(userDocRef, {
-          id: user.uid,
-          email: user.email,
-          name: user.displayName,
-          role: 'citizen',
-          points: 0,
-        }, { merge: true });
+        if (userProfile) {
+          // Profile exists — only sync mutable display fields, preserve role
+          setDocumentNonBlocking(userDocRef, {
+            id: user.uid,
+            email: user.email,
+            name: user.displayName,
+          }, { merge: true });
+        } else {
+          // First-ever login — create full profile with default citizen role
+          setDocumentNonBlocking(userDocRef, {
+            id: user.uid,
+            email: user.email,
+            name: user.displayName,
+            role: 'citizen',
+            points: 0,
+          }, { merge: true });
+        }
       }
     }
-  }, [user, firestore]);
+  }, [user, firestore, userProfile, isProfileLoading]);
 
   const isLoading = isAuthLoading || (user && isProfileLoading);
 

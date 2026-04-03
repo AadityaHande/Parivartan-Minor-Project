@@ -1,5 +1,4 @@
-'use client';
-// This file has been reset.
+// Type definitions for the Parivartan platform
 
 // Department type for hierarchical workflow
 export type Department = {

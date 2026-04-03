@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Bell, LogOut, Settings, User, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { useCollection, useMemoFirebase } from '@/firebase';
+import { useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { useFirestore } from '@/firebase/provider';
 import { collection, query, orderBy, limit, doc, writeBatch } from 'firebase/firestore';
 import { getAuth, signOut } from 'firebase/auth';
@@ -19,10 +19,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import LanguageSelector from '@/components/translation/language-selector';
 
 export default function CitizenHeader() {
   const router = useRouter();
   const firestore = useFirestore();
+  const { user } = useUser();
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
 
   const handleLogout = async () => {
@@ -36,11 +38,19 @@ export default function CitizenHeader() {
   };
 
   const notificationsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return query(collection(firestore, 'notifications'), orderBy('createdAt', 'desc'), limit(5));
-  }, [firestore]);
+    if (!firestore || !user) return null;
+    // Fetch recent notifications (limit 10 to have room for client-side filtering)
+    return query(collection(firestore, 'notifications'), orderBy('createdAt', 'desc'), limit(10));
+  }, [firestore, user]);
 
-  const { data: notifications } = useCollection<Notification>(notificationsQuery);
+  const { data: allNotifications } = useCollection<Notification>(notificationsQuery);
+
+  // Only show global notifications (no userId) OR ones targeted at THIS citizen.
+  // This prevents citizens from seeing worker-specific or other user-specific notifications.
+  const notifications = allNotifications?.filter(
+    (n) => !n.userId || n.userId === user?.uid
+  ).slice(0, 5);
+
   const unreadCount = notifications?.filter((n) => !n.isRead).length || 0;
 
   const handleReadAll = async () => {
@@ -124,6 +134,8 @@ export default function CitizenHeader() {
         </div>
 
         <div className="flex items-center gap-2">
+          <LanguageSelector className="hidden sm:inline-flex" />
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full relative hover:bg-gray-100 dark:hover:bg-slate-800">
@@ -175,6 +187,8 @@ export default function CitizenHeader() {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <LanguageSelector className="sm:hidden" />
         </div>
       </div>
     </header>
