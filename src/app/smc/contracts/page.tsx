@@ -12,8 +12,10 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { buildAuthHeaders } from '@/lib/client-auth';
+import { AlertCircle } from 'lucide-react';
 
 const DEPARTMENT_OPTIONS = ['Engineering', 'Drainage', 'Electricity', 'Sanitation', 'Roads'];
 const SKILL_OPTIONS = ['Garbage', 'Road Repair', 'Electrical'];
@@ -47,6 +49,7 @@ export default function SmcContractsPage() {
     wardArea: '',
   });
   const [isCreatingWorker, setIsCreatingWorker] = useState(false);
+  const [workerCreateConflictMessage, setWorkerCreateConflictMessage] = useState<string | null>(null);
   const [newWorker, setNewWorker] = useState({
     fullName: '',
     phoneNumber: '',
@@ -185,10 +188,15 @@ export default function SmcContractsPage() {
   };
 
   const handleNewWorkerChange = (field: keyof typeof newWorker, value: string) => {
+    if (workerCreateConflictMessage && (field === 'phoneNumber' || field === 'email')) {
+      setWorkerCreateConflictMessage(null);
+    }
     setNewWorker((previous) => ({ ...previous, [field]: value }));
   };
 
   const handleCreateWorker = async () => {
+    setWorkerCreateConflictMessage(null);
+
     if (
       !newWorker.fullName ||
       !newWorker.phoneNumber ||
@@ -240,11 +248,20 @@ export default function SmcContractsPage() {
         wardArea: '',
       });
     } catch (error) {
-      console.error(error);
+      const message = error instanceof Error ? error.message : 'Unknown error occurred while adding worker.';
+      const isExpectedConflict = /already exists/i.test(message);
+      if (isExpectedConflict) {
+        setWorkerCreateConflictMessage(message);
+        return;
+      }
+
+      if (!isExpectedConflict) {
+        console.error(error);
+      }
       toast({
         variant: 'destructive',
         title: 'Could not add worker',
-        description: error instanceof Error ? error.message : 'Unknown error occurred while adding worker.',
+        description: message,
       });
     } finally {
       setIsCreatingWorker(false);
@@ -393,6 +410,14 @@ export default function SmcContractsPage() {
                 Worker ID and Password are auto-generated and sent by SMS after successful creation.
               </div>
             </div>
+
+            {workerCreateConflictMessage ? (
+              <Alert variant="destructive" className="mt-3">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Worker already exists</AlertTitle>
+                <AlertDescription>{workerCreateConflictMessage}</AlertDescription>
+              </Alert>
+            ) : null}
 
             <div className="mt-4 flex justify-end">
               <Button onClick={handleCreateWorker} disabled={isCreatingWorker || contractorOptions.length === 0}>

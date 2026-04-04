@@ -13,6 +13,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/firebase';
+import { isNotificationActive } from '@/lib/notification-utils';
 
 const typeConfig = {
   road_construction: {
@@ -52,7 +53,9 @@ export default function NotificationsPage() {
   }, [firestore]);
 
   const { data: notifications, isLoading } = useCollection<Notification>(notificationsQuery);
-  const visibleNotifications = notifications?.filter((notification) => !notification.userId || notification.userId === user?.uid);
+  const visibleNotifications = notifications?.filter(
+    (notification) => (!notification.userId || notification.userId === user?.uid) && isNotificationActive(notification)
+  );
 
   const handleReadAll = async () => {
     if (!firestore || !visibleNotifications) return;

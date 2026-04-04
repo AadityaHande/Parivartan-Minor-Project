@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { isNotificationActive } from '@/lib/notification-utils';
 
 const typeConfig = {
   road_construction: { icon: Construction, label: 'Road Construction', color: 'bg-orange-500' },
@@ -28,7 +29,8 @@ export default function WorkerNotificationsPage() {
     return query(collection(firestore, 'notifications'), orderBy('createdAt', 'desc'));
   }, [firestore]);
 
-  const { data: notifications, isLoading } = useCollection<Notification>(notificationsQuery);
+  const { data: allNotifications, isLoading } = useCollection<Notification>(notificationsQuery);
+  const notifications = allNotifications?.filter((notification) => isNotificationActive(notification));
 
   const handleReadAll = async () => {
     if (!firestore || !notifications) return;

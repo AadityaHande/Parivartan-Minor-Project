@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import LanguageSelector from '@/components/translation/language-selector';
+import { isNotificationActive } from '@/lib/notification-utils';
 
 export default function WorkerHeader() {
   const firestore = useFirestore();
@@ -28,8 +29,9 @@ export default function WorkerHeader() {
     return query(collection(firestore, 'notifications'), orderBy('createdAt', 'desc'), limit(5));
   }, [firestore]);
 
-  const { data: notifications } = useCollection<Notification>(notificationsQuery);
-  const unreadCount = notifications?.filter(n => !n.isRead).length || 0;
+  const { data: allNotifications } = useCollection<Notification>(notificationsQuery);
+  const notifications = allNotifications?.filter((notification) => isNotificationActive(notification)) || [];
+  const unreadCount = notifications.filter(n => !n.isRead).length || 0;
 
   const handleReadAll = async () => {
     if (!firestore || !notifications) return;

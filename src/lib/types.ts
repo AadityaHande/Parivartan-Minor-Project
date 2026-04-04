@@ -98,8 +98,16 @@ export type Notification = {
   imageUrl?: string;
   location?: string;
   locationLink?: string;
+  latitude?: number;
+  longitude?: number;
   createdAt: string;
   createdBy: string;
   type: 'road_construction' | 'traffic_update' | 'maintenance' | 'general';
+  durationMode?: 'fixed' | 'unpredictable';
+  durationMinutes?: number;
+  expiresAt?: string | null;
+  isArchived?: boolean;
+  archivedAt?: string;
+  archiveReason?: 'duration_elapsed' | 'manual';
   isRead?: boolean;
 };

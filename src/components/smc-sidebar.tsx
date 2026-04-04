@@ -11,7 +11,6 @@ import { useAuth } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
-import LanguageSelector from '@/components/translation/language-selector';
 
 export default function SmcSidebar() {
   const pathname = usePathname();
@@ -81,8 +80,6 @@ export default function SmcSidebar() {
           
           {/* Footer */}
           <div className="space-y-2.5 border-t p-3">
-            <LanguageSelector className="h-9 w-full justify-between rounded-lg text-[13px]" />
-
             <div className="flex items-center gap-2.5 rounded-lg bg-muted/50 p-2.5">
               <UserNav />
               <div className="flex-1 min-w-0">
@@ -147,7 +144,6 @@ export default function SmcSidebar() {
         </div>
         
         <div className="flex items-center gap-2">
-          <LanguageSelector className="hidden sm:inline-flex" />
           <Button 
             variant="ghost" 
             size="icon"
@@ -156,7 +152,6 @@ export default function SmcSidebar() {
           >
             <LogOut className="h-5 w-5" />
           </Button>
-          <LanguageSelector className="sm:hidden" />
           <UserNav />
         </div>
       </header>

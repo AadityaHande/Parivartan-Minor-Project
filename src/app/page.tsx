@@ -13,6 +13,7 @@ import { useRouter } from 'next/navigation';
 import { doc } from 'firebase/firestore';
 import type { User as UserProfile } from '@/lib/types';
 import LanguageSelector from '@/components/translation/language-selector';
+import GoogleTranslate from '@/components/GoogleTranslate';
 
 const featureCards = [
   {
@@ -116,6 +117,7 @@ export default function LandingPage() {
     
   return (
     <div className="flex flex-col min-h-screen">
+      <GoogleTranslate />
       <header className="sticky top-0 z-50 w-full border-b bg-white/80 backdrop-blur-xl supports-[backdrop-filter]:bg-white/60 shadow-sm">
         <div className="container flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center gap-2 font-bold">

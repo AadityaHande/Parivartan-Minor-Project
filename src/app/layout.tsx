@@ -6,7 +6,6 @@ import { FirebaseClientProvider } from '@/firebase';
 import { PWARegister } from '@/components/pwa-register';
 import { PWAInstallPrompt } from '@/components/pwa-install-prompt';
 import { OfflineIndicator } from '@/components/offline-indicator';
-import GoogleTranslate from '@/components/GoogleTranslate';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
@@ -53,7 +52,6 @@ export default function RootLayout({
       <body className={`${inter.variable} bg-slate-50 text-slate-900 antialiased`}>
         <PWARegister />
         <FirebaseClientProvider>
-          <GoogleTranslate />
           <PWAInstallPrompt />
           <OfflineIndicator />
           {children}

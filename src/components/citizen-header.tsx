@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import LanguageSelector from '@/components/translation/language-selector';
+import { isNotificationActive } from '@/lib/notification-utils';
 
 export default function CitizenHeader() {
   const router = useRouter();
@@ -48,7 +49,7 @@ export default function CitizenHeader() {
   // Only show global notifications (no userId) OR ones targeted at THIS citizen.
   // This prevents citizens from seeing worker-specific or other user-specific notifications.
   const notifications = allNotifications?.filter(
-    (n) => !n.userId || n.userId === user?.uid
+    (n) => (!n.userId || n.userId === user?.uid) && isNotificationActive(n)
   ).slice(0, 5);
 
   const unreadCount = notifications?.filter((n) => !n.isRead).length || 0;

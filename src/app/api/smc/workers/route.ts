@@ -109,12 +109,32 @@ export async function POST(request: NextRequest) {
     const password = generatePassword();
     const loginEmail = emailInput || `${workerId.toLowerCase()}@workers.parivartan.local`;
 
-    const createdAuthUser = await auth.createUser({
-      email: loginEmail,
-      password,
-      displayName: fullName,
-      phoneNumber: normalizedPhoneNumber,
-    });
+    let createdAuthUser;
+    try {
+      createdAuthUser = await auth.createUser({
+        email: loginEmail,
+        password,
+        displayName: fullName,
+      });
+    } catch (error: any) {
+      const code = String(error?.code || '');
+
+      if (code === 'auth/phone-number-already-exists') {
+        return NextResponse.json(
+          { error: 'A user with this phone number already exists. Use a different phone number.' },
+          { status: 409 }
+        );
+      }
+
+      if (code === 'auth/email-already-exists') {
+        return NextResponse.json(
+          { error: 'A user with this email already exists. Use a different email address.' },
+          { status: 409 }
+        );
+      }
+
+      throw error;
+    }
 
     await firestore.collection('users').doc(createdAuthUser.uid).set({
       id: createdAuthUser.uid,

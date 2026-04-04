@@ -8,6 +8,7 @@ import AuthGuard from '@/components/auth-guard';
 import WorkerHeader from '@/components/worker-header';
 import { PWAInstallBanner } from '@/components/pwa-install-button';
 import { cn } from '@/lib/utils';
+import GoogleTranslate from '@/components/GoogleTranslate';
 
 const bottomNavItems = [
   { href: '/worker/dashboard', label: 'Home', icon: <LayoutDashboard className="h-5 w-5" /> },
@@ -24,6 +25,7 @@ export default function WorkerLayout({ children }: { children: React.ReactNode }
   return (
     <AuthGuard loginPath="/worker/login" allowedRoles={['worker']} publicPaths={['/worker/login']}>
       <div className="flex min-h-screen w-full flex-col">
+        <GoogleTranslate />
         <WorkerHeader />
         <main className="flex flex-1 flex-col gap-4 bg-muted/40 p-4 pb-24 md:gap-6 md:p-6 md:pb-6">{children}</main>
 

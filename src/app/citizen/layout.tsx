@@ -6,6 +6,7 @@ import AuthGuard from '@/components/auth-guard';
 import { PWAInstallBanner } from '@/components/pwa-install-button';
 import CitizenChatbotWidget from '@/components/citizen-chatbot-widget';
 import { usePathname } from 'next/navigation';
+import GoogleTranslate from '@/components/GoogleTranslate';
 
 export default function CitizenLayout({
   children,
@@ -18,6 +19,7 @@ export default function CitizenLayout({
   return (
     <AuthGuard loginPath="/citizen/login" allowedRoles={['citizen']} publicPaths={['/citizen/login']}>
       <div className="relative flex min-h-screen flex-col bg-gray-50 dark:bg-slate-950">
+        {!isLoginRoute && <GoogleTranslate />}
         {!isLoginRoute && <CitizenHeader />}
         <main className={isLoginRoute ? 'flex-1' : 'flex-1 pb-24 md:pb-0'}>{children}</main>
 
