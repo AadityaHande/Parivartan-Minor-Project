@@ -135,12 +135,6 @@ export function PWAInstallPrompt() {
                 checked={dontShowAgain}
                 onCheckedChange={(checked) => setDontShowAgain(checked === true)}
               />
-              <label
-                htmlFor="dont-show"
-                className="text-sm text-muted-foreground cursor-pointer select-none"
-              >
-                Don't show this again
-              </label>
             </div>
 
             <Button 

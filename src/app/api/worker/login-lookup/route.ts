@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFirebaseAdmin } from '@/firebase/server';
-import { requireRequestIdentity, RequestAuthError } from '@/lib/server-auth';
 
 function normalizeSegment(value: string) {
   return value.trim().replace(/\s+/g, ' ');
@@ -8,9 +7,6 @@ function normalizeSegment(value: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Only SMC officials can lookup worker information
-    await requireRequestIdentity(request, ['official', 'department_head']);
-
     const body = await request.json();
     const workerId = normalizeSegment(String(body.workerId || '')).toUpperCase();
 
@@ -40,10 +36,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, email });
   } catch (error) {
-    if (error instanceof RequestAuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
     console.error('Worker login lookup failed:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Lookup failed.' },

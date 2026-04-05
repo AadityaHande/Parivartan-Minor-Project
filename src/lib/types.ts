@@ -14,16 +14,27 @@ export type User = {
   email: string;
   phoneNumber?: string;
   organization?: string;
-  role: 'citizen' | 'official' | 'worker' | 'department_head';
+  role: 'citizen' | 'official' | 'worker' | 'department_head' | 'admin';
   points: number;
   departmentId?: string; // For workers and department heads
   department?: string; // Department name for quick access
   designation?: string;
-  skillType?: 'Garbage' | 'Road Repair' | 'Electrical' | string;
+  skillType?: string; // e.g., 'Garbage', 'Road Repair', 'Electrical', etc.
+  workerRole?: WorkerRole; // New detailed role structure
   assignedContractor?: string;
   wardArea?: string;
   employeeId?: string;
   createdAt?: string;
+  // Location data for workers
+  currentLocation?: {
+    latitude: number;
+    longitude: number;
+    lastUpdated: string;
+  };
+  // Assignment tracking
+  activeTasks?: number;
+  maxTaskCapacity?: number;
+  isAvailable?: boolean;
 };
 export type ReportStatus = 'Submitted' | 'Under Verification' | 'Assigned' | 'In Progress' | 'Resolved' | 'Rejected';
 export type WorkerMediaType = 'image' | 'video';
@@ -59,6 +70,7 @@ export type Report = {
   assignedContractor?: string; // Worker name (legacy support)
   assignedWorkerId?: string; // Worker user ID for proper linking
   assignedBy?: string; // Who assigned the task (department head or admin)
+  assignmentMethod?: 'auto_assign' | 'admin_assign' | 'admin_override' | 'bulk_assign' | 'queue_assign';
   priority?: 'Low' | 'Medium' | 'High' | 'Critical';
   estimatedResolutionTime?: string;
   afterImageUrl?: string;
@@ -77,6 +89,10 @@ export type Report = {
   actionLog?: ActionLogEntry[];
   citizenRating?: number;
   workflowStage?: 'pending_admin' | 'pending_department' | 'assigned_worker' | 'in_progress' | 'completed';
+  // New assignment system fields
+  queuePosition?: number; // Position in department queue
+  assignmentHistory?: AssignmentHistory[]; // Track reassignments
+  autoAssignmentScore?: number; // Score for matching worker (0-100)
 };
 export type AIAnalysis = {
   damageDetected: boolean;
@@ -84,7 +100,15 @@ export type AIAnalysis = {
   severity: 'Low' | 'Medium' | 'High';
   verificationSuggestion: 'Likely genuine' | 'Needs manual verification';
   description: string;
-  suggestedDepartment: 'Engineering' | 'Water Supply' | 'Drainage' | 'Electricity' | 'Traffic' | 'Unassigned';
+  suggestedDepartment:
+    | 'Engineering'
+    | 'Sanitation'
+    | 'Electrical'
+    | 'Water Supply'
+    | 'Parks & Environment'
+    | 'Traffic & Roads'
+    | 'Public Works'
+    | 'Unassigned';
   suggestedPriority: 'Low' | 'Medium' | 'High' | 'Critical';
   duplicateSuggestion: string;
   suggestedLocationDetails?: string;
@@ -110,4 +134,119 @@ export type Notification = {
   archivedAt?: string;
   archiveReason?: 'duration_elapsed' | 'manual';
   isRead?: boolean;
+};
+
+// ===================== NEW WORKER ASSIGNMENT SYSTEM TYPES =====================
+
+// Worker role/designation type
+export type WorkerRole = {
+  role: string;
+  department: string;
+  skillLevel?: 'Junior' | 'Senior' | 'Lead';
+  certifications?: string[];
+};
+
+// Worker availability status
+export type WorkerAvailability = {
+  workerId: string;
+  status: 'Available' | 'Busy' | 'On Break' | 'Offline';
+  lastUpdated: string;
+  activeTasks: number;
+  maxTasks: number;
+};
+
+// Worker location for proximity-based assignment
+export type WorkerLocation = {
+  workerId: string;
+  latitude: number;
+  longitude: number;
+  wardArea?: string;
+  lastUpdated: string;
+};
+
+// Queue system for department tasks
+export type DepartmentQueue = {
+  departmentId: string;
+  departmentName: string;
+  tasks: QueuedTask[];
+  averageResolutionTime?: string;
+};
+
+export type QueuedTask = {
+  reportId: string;
+  status: 'Waiting' | 'Assigned' | 'In Progress';
+  priority: 'Low' | 'Medium' | 'High' | 'Critical';
+  addedAt: string;
+  assignedWorkerId?: string;
+};
+
+// Auto-assignment configuration
+export type AutoAssignmentConfig = {
+  enabled: boolean;
+  strategy: 'nearest' | 'least_busy' | 'balanced' | 'custom';
+  maxKmRadius: number;
+  considerAvailability: boolean;
+  considerWorkload: boolean;
+  considerLocation: boolean;
+  weights?: {
+    distanceWeight: number;
+    workloadWeight: number;
+    availabilityWeight: number;
+  };
+};
+
+// Admin dashboard assignment view
+export type AdminDashboardItem = {
+  reportId: string;
+  issue: string;
+  autoAssignedDept: string;
+  autoAssignedDeptId: string;
+  autoAssignedWorker?: {
+    workerId: string;
+    name: string;
+    role: string;
+    location: string;
+    distanceKm: number;
+    currentTasks: number;
+  };
+  actions: 'approve' | 'reassign' | 'override';
+  timestamp: string;
+  priority: 'Low' | 'Medium' | 'High' | 'Critical';
+};
+
+// Bulk assignment payload
+export type BulkAssignmentPayload = {
+  reportIds: string[];
+  department?: string;
+  contractor?: string;
+  priority?: 'Low' | 'Medium' | 'High' | 'Critical';
+  notes?: string;
+  assignedBy: string;
+  assignedAt: string;
+};
+
+// Overload alert system
+export type OverloadAlert = {
+  alertId: string;
+  departmentId: string;
+  departmentName: string;
+  pendingTasksCount: number;
+  assignedTasksCount: number;
+  totalTasksCount: number;
+  threshold: number;
+  severity: 'Warning' | 'Critical';
+  suggestions?: string[];
+  generatedAt: string;
+};
+
+// Assignment history for tracking
+export type AssignmentHistory = {
+  id: string;
+  reportId: string;
+  previousWorkerId?: string;
+  newWorkerId: string;
+  assignmentMethod: 'auto_assign' | 'admin_assign' | 'admin_override' | 'bulk_assign' | 'queue_assign';
+  assignedBy: string;
+  reason?: string;
+  timestamp: string;
 };

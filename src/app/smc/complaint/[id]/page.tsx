@@ -18,10 +18,10 @@ import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
 import { MapPin, User, Calendar, Bot, Loader2, Shield, AlertTriangle, Sparkles } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
-import { useAuth, useDoc, useMemoFirebase, useUser } from '@/firebase';
-import { collection, doc, DocumentData, DocumentReference, updateDoc, arrayUnion, increment, getDocs, query, where, addDoc, getDoc } from 'firebase/firestore';
+import { useAuth, useCollection, useDoc, useMemoFirebase, useUser } from '@/firebase';
+import { collection, doc, DocumentData, DocumentReference, query, Query, updateDoc, where } from 'firebase/firestore';
 import { useFirestore } from '@/firebase/provider';
-import type { Report, ReportStatus, AIAnalysis } from '@/lib/types';
+import type { AIAnalysis, Report, ReportStatus, User as WorkerUser } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { Textarea } from '@/components/ui/textarea';
@@ -34,6 +34,7 @@ import { useParams } from 'next/navigation';
 import { summarizeReportFlow } from '@/ai/flows/summarize-report-flow';
 import ReactMarkdown from 'react-markdown';
 import { buildAuthHeaders } from '@/lib/client-auth';
+import { departmentConfig, departments } from '@/lib/constants';
 
 
 const statusColors: { [key: string]: string } = {
@@ -48,18 +49,32 @@ const statusColors: { [key: string]: string } = {
 const officerActionableStatuses: ReportStatus[] = ['Under Verification', 'Assigned', 'In Progress', 'Resolved', 'Rejected'];
 const severityLevels: (AIAnalysis['severity'])[] = ['Low', 'Medium', 'High'];
 const priorityLevels: NonNullable<Report['priority']>[] = ['Low', 'Medium', 'High', 'Critical'];
-import { departments } from '@/lib/constants';
 
 const causeTags = ['Rain / Flood', 'Construction', 'Utility Work', 'Heavy Load', 'Poor Quality', 'Other'];
-const mockContractors = [
-  { name: 'SK Construction', department: 'Engineering' },
-  { name: 'Patil Infra Pvt. Ltd.', department: 'Engineering' },
-  { name: 'Water Works Team', department: 'Water Supply' },
-  { name: 'Drainage Maintenance Crew', department: 'Drainage' },
-  { name: 'Electrical Services Team', department: 'Electricity' },
-  { name: 'Traffic Management Unit', department: 'Traffic' },
-  { name: 'Road Repair Squad', department: 'Engineering' },
-];
+
+const categoryDepartmentMap: Record<string, string> = {
+    pothole: 'Engineering',
+    crack: 'Engineering',
+    road: 'Engineering',
+    drainage: 'Water Supply',
+    sewage: 'Water Supply',
+    water: 'Water Supply',
+    garbage: 'Sanitation',
+    waste: 'Sanitation',
+    sanitation: 'Sanitation',
+    light: 'Electrical',
+    electric: 'Electrical',
+    signal: 'Traffic & Roads',
+    traffic: 'Traffic & Roads',
+    tree: 'Parks & Environment',
+    park: 'Parks & Environment',
+};
+
+function inferDepartmentFromCategory(category: string, fallback?: string) {
+    const normalized = category.toLowerCase();
+    const mapped = Object.entries(categoryDepartmentMap).find(([key]) => normalized.includes(key))?.[1];
+    return mapped || fallback || 'Engineering';
+}
 
 
 const officerActionSchema = z.object({
@@ -85,6 +100,7 @@ export default function SmcComplaintDetailPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
+    const [isAutoAssigning, setIsAutoAssigning] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
 
   const reportRef = useMemoFirebase(() => {
@@ -93,6 +109,13 @@ export default function SmcComplaintDetailPage() {
   }, [firestore, params.id]);
 
   const { data: report, isLoading } = useDoc<Report>(reportRef);
+
+    const workersQuery = useMemoFirebase(() => {
+        if (!firestore) return null;
+        return query(collection(firestore, 'users'), where('role', '==', 'worker'));
+    }, [firestore]) as Query<DocumentData> | null;
+
+    const { data: workers = [] } = useCollection<WorkerUser>(workersQuery);
 
   const form = useForm<OfficerActionForm>({
     resolver: zodResolver(officerActionSchema),
@@ -132,10 +155,75 @@ export default function SmcComplaintDetailPage() {
 
 
   const watchedStatus = form.watch('status');
+    const selectedDepartment = form.watch('department');
+
+    const effectiveDepartment = report
+        ? (selectedDepartment && selectedDepartment !== 'Unassigned'
+                ? selectedDepartment
+                : inferDepartmentFromCategory(report.category, report.aiAnalysis?.suggestedDepartment))
+        : 'Engineering';
+
+    const filteredWorkers = workers.filter((worker) => {
+        if (!effectiveDepartment) return true;
+        return worker.department === effectiveDepartment;
+    });
+
+    const categoryWiseWorkers = report
+        ? filteredWorkers.filter((worker) => {
+                const categoryText = report.category.toLowerCase();
+                const workerText = `${worker.designation || ''} ${worker.skillType || ''}`.toLowerCase();
+                return categoryText.split(' ').some((token) => token.length > 2 && workerText.includes(token));
+            })
+        : [];
+
+    const recommendedWorkers = categoryWiseWorkers.length > 0 ? categoryWiseWorkers : filteredWorkers;
 
   const mapsUrl = report?.latitude && report?.longitude 
     ? `https://www.google.com/maps?q=${report.latitude},${report.longitude}` 
     : `https://www.google.com/maps?q=${encodeURIComponent(report?.location || '')}`;
+
+    const handleAutoAssign = useCallback(() => {
+        if (!report) return;
+        if (recommendedWorkers.length === 0) {
+            toast({
+                variant: 'destructive',
+                title: 'No Matching Workers',
+                description: `No workers found for ${effectiveDepartment}. Please choose manually after changing department.`,
+            });
+            return;
+        }
+
+        setIsAutoAssigning(true);
+        try {
+            const locationText = `${report.location} ${report.roadName || ''}`.toLowerCase();
+            const scored = [...recommendedWorkers].sort((a, b) => {
+                const score = (w: WorkerUser) => {
+                    let total = 0;
+                    if (w.isAvailable !== false) total += 50;
+                    total -= (w.activeTasks || 0) * 6;
+                    if (w.wardArea && locationText.includes(w.wardArea.toLowerCase())) total += 18;
+                    const roleText = `${w.designation || ''} ${w.skillType || ''}`.toLowerCase();
+                    if (roleText.includes(report.category.toLowerCase())) total += 16;
+                    return total;
+                };
+                return score(b) - score(a);
+            });
+
+            const bestWorker = scored[0];
+            form.setValue('department', effectiveDepartment);
+            form.setValue('assignedContractor', bestWorker.name);
+            if (watchedStatus !== 'Assigned' && watchedStatus !== 'In Progress') {
+                form.setValue('status', 'Assigned');
+            }
+
+            toast({
+                title: 'Worker Auto-Assigned',
+                description: `${bestWorker.name} selected for ${report.category}. You can still change manually below.`,
+            });
+        } finally {
+            setIsAutoAssigning(false);
+        }
+    }, [effectiveDepartment, form, recommendedWorkers, report, toast, watchedStatus]);
 
     const handleGetSummary = useCallback(async () => {
     if (!report) return;
@@ -397,11 +485,28 @@ export default function SmcComplaintDetailPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Officer Control Panel</CardTitle>
-                    <CardDescription>First, assign a department. Then, assign a worker to the job.</CardDescription>
+                                        <CardDescription>Auto-assign by category first, then adjust manually if needed.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <Form {...form}>
                         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                                                        <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+                                                                <p className="text-sm">
+                                                                    <span className="font-semibold">Problem Category:</span> {report.category}
+                                                                </p>
+                                                                <p className="text-xs text-muted-foreground">
+                                                                    Showing category-wise workers for <span className="font-medium">{effectiveDepartment}</span>.
+                                                                </p>
+                                                                <Button
+                                                                    type="button"
+                                                                    onClick={handleAutoAssign}
+                                                                    disabled={isAutoAssigning || isSubmitting || isSummarizing}
+                                                                    className="w-full"
+                                                                >
+                                                                    {isAutoAssigning ? <><Loader2 className="animate-spin mr-2" />Auto Assigning...</> : 'Auto Assign Worker'}
+                                                                </Button>
+                                                        </div>
+
                             <FormField
                                 control={form.control}
                                 name="status"
@@ -468,38 +573,37 @@ export default function SmcComplaintDetailPage() {
                                 control={form.control}
                                 name="assignedContractor"
                                 render={({ field }) => {
-                                const selectedDept = form.watch('department');
-                                const filteredContractors = selectedDept && selectedDept !== 'Unassigned'
-                                    ? mockContractors.filter(c => c.department === selectedDept)
-                                    : mockContractors;
+                                const workersToShow = recommendedWorkers;
                                 return (
                                 <FormItem>
-                                    <FormLabel>Assign Contractor / Worker</FormLabel>
+                                    <FormLabel>Manual Worker Override</FormLabel>
                                     <Select 
                                         onValueChange={field.onChange} 
                                         value={field.value}
                                         disabled={watchedStatus !== 'Assigned' && watchedStatus !== 'In Progress'}
                                     >
                                     <FormControl>
-                                        <SelectTrigger><SelectValue placeholder="Select a contractor..." /></SelectTrigger>
+                                        <SelectTrigger><SelectValue placeholder="Select a worker..." /></SelectTrigger>
                                     </FormControl>
                                     <SelectContent>
-                                        {filteredContractors.length === 0 ? (
-                                            <SelectItem value="" disabled>No workers in this department</SelectItem>
+                                        {workersToShow.length === 0 ? (
+                                            <SelectItem value="no-worker" disabled>No workers match this category/department</SelectItem>
                                         ) : (
-                                            filteredContractors.map((c) => (
-                                                <SelectItem key={c.name} value={c.name}>
-                                                    {c.name}
-                                                    <span className="text-xs text-muted-foreground ml-2">({c.department})</span>
+                                            workersToShow.map((worker) => (
+                                                <SelectItem key={worker.id} value={worker.name}>
+                                                    {worker.name}
+                                                    <span className="text-xs text-muted-foreground ml-2">
+                                                      ({worker.designation || worker.department || 'Worker'})
+                                                    </span>
                                                 </SelectItem>
                                             ))
                                         )}
                                     </SelectContent>
                                     </Select>
                                     <FormDescription>
-                                        {selectedDept && selectedDept !== 'Unassigned' 
-                                            ? `Showing workers from ${selectedDept} department`
-                                            : 'Select a department first to filter workers'}
+                                        {workersToShow.length > 0
+                                          ? `${workersToShow.length} category-wise workers shown for ${effectiveDepartment}`
+                                          : `No matching workers found for ${effectiveDepartment}`}
                                     </FormDescription>
                                     <FormMessage />
                                 </FormItem>

@@ -92,11 +92,19 @@ interface ReportLocation {
   status?: string;
   type?: string;
   date?: string;
+  category?: string; // Report category for filtering
+  department?: string;
+  reportId?: string; // Add report ID for linking
+  imageUrl?: string; // Add image URL for preview
+  description?: string; // Add description
+  priority?: string; // Add priority
 }
 
 interface MaharashtraMapProps {
   data: ReportLocation[];
   className?: string;
+  selectedCategories?: string[]; // Categories to display
+  selectedStatuses?: string[]; // Statuses to display
 }
 
 // Pune bounds (tight fit around the city)
@@ -130,7 +138,9 @@ const tileLayers = {
 
 export default function HeatMap({ 
   data, 
-  className = ''
+  className = '',
+  selectedCategories = [],
+  selectedStatuses = []
 }: MaharashtraMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -138,6 +148,13 @@ export default function HeatMap({
   const [activeLayer, setActiveLayer] = useState<'satellite' | 'terrain' | 'streets' | 'dark'>('streets');
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const [mapReady, setMapReady] = useState(false);
+
+  // Filter data based on selected categories and statuses
+  const filteredData = data.filter(point => {
+    const categoryMatch = selectedCategories.length === 0 || !point.category || selectedCategories.includes(point.category);
+    const statusMatch = selectedStatuses.length === 0 || !point.status || selectedStatuses.includes(point.status);
+    return categoryMatch && statusMatch;
+  });
 
   // Initialize map only once
   useEffect(() => {
@@ -151,8 +168,6 @@ export default function HeatMap({
       maxZoom: 18,
       zoomControl: false,
       scrollWheelZoom: true,
-      maxBounds: PUNE_BOUNDS,
-      maxBoundsViscosity: 0.9,
     });
 
     // Add zoom control to top-right
@@ -330,7 +345,7 @@ export default function HeatMap({
     
     markersLayerRef.current.clearLayers();
 
-    data.forEach(point => {
+    filteredData.forEach(point => {
       if (point.lat && point.lng) {
         let marker: L.Marker;
         
@@ -346,49 +361,78 @@ export default function HeatMap({
           });
         }
 
-        // Enhanced popup with more info
+        // Compact popup: image + key metadata only
         const popupContent = `
-          <div style="min-width: 180px; padding: 4px;">
-            <div style="font-weight: 600; color: #1f2937; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-              <span style="font-size: 16px;">📍</span>
-              ${point.location || 'Report Location'}
+          <div style="min-width: 220px; max-width: 240px; padding: 0; border-radius: 12px; overflow: hidden;">
+            ${point.imageUrl ? `
+              <div style="width: 100%; height: 140px; overflow: hidden; background: #f3f4f6;">
+                <img 
+                  src="${point.imageUrl}" 
+                  alt="Report" 
+                  style="width: 100%; height: 100%; object-fit: cover;" 
+                  class="map-popup-image"
+                />
+              </div>
+            ` : ''}
+            <div style="padding: 12px; background: white;">
+              <div style="display: flex; flex-direction: column; gap: 6px; font-size: 12px;">
+                ${point.type ? `<div style="color: #374151;"><strong>Category:</strong> ${point.type}</div>` : ''}
+                ${point.priority ? `<div style="color: #374151;"><strong>Priority:</strong> ${point.priority}</div>` : ''}
+                ${point.date ? `<div style="color: #6b7280;"><strong>Reported:</strong> ${point.date}</div>` : ''}
+              </div>
             </div>
-            ${point.type ? `<div style="color: #6b7280; font-size: 12px; margin-bottom: 4px;">🚧 ${point.type}</div>` : ''}
-            ${point.date ? `<div style="color: #9ca3af; font-size: 11px; margin-bottom: 6px;">📅 ${point.date}</div>` : ''}
-            ${point.count ? `<div style="color: #6b7280; font-size: 12px; margin-bottom: 6px;">📊 ${point.count} report${point.count > 1 ? 's' : ''} at this location</div>` : ''}
-            ${point.status ? `<span style="
-              display: inline-block;
-              padding: 4px 10px;
-              background: ${point.status === 'Resolved' ? 'linear-gradient(135deg, #22c55e, #16a34a)' : point.status === 'In Progress' ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'linear-gradient(135deg, #ef4444, #dc2626)'};
-              color: white;
-              border-radius: 6px;
-              font-size: 11px;
-              font-weight: 500;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            ">${point.status}</span>` : ''}
           </div>
         `;
         
         marker.bindPopup(popupContent, {
           className: 'custom-popup',
           closeButton: true,
-          autoPan: true
+          autoPan: true,
+          autoPanPaddingTopLeft: [16, 16],
+          autoPanPaddingBottomRight: [16, 16],
+          maxWidth: 250,
+          minWidth: 220,
         });
 
         markersLayerRef.current?.addLayer(marker);
       }
     });
-  }, [data, mapReady]);
+  }, [filteredData, mapReady]);
 
   return (
     <div className="relative w-full h-full">
       <style jsx global>{`
         .custom-popup .leaflet-popup-content-wrapper {
           border-radius: 12px;
-          box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+          box-shadow: 0 12px 48px rgba(0,0,0,0.25);
+          padding: 0;
+          border: 1px solid #e5e7eb;
+          background: white;
         }
         .custom-popup .leaflet-popup-tip {
-          box-shadow: 0 3px 14px rgba(0,0,0,0.1);
+          box-shadow: 0 3px 14px rgba(0,0,0,0.15);
+          border: 1px solid #e5e7eb;
+        }
+        .custom-popup .leaflet-popup-content {
+          margin: 0;
+          max-height: 280px;
+          overflow-y: auto;
+          scrollbar-width: thin;
+        }
+        .custom-popup .leaflet-popup-content::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-popup .leaflet-popup-content::-webkit-scrollbar-track {
+          background: #f1f5f9;
+        }
+        .custom-popup .leaflet-popup-content::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 3px;
+        }
+        .map-popup-image {
+          display: block;
+          width: 100%;
+          height: 100%;
         }
         @keyframes pulse {
           0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }

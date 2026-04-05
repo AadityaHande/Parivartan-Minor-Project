@@ -10,9 +10,11 @@ import {
   Flame,
   AlertTriangle,
   Clock,
+  Filter,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -67,6 +69,10 @@ const statusGradients: { [key: string]: string } = {
 
 export default function SmcDashboard() {
   const firestore = useFirestore();
+  
+  // Filter states for map
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
 
   const allReportsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -121,7 +127,7 @@ export default function SmcDashboard() {
       };
     });
 
-    // Heat map data - use actual report coordinates
+    // Heat map data - use actual report coordinates with category and department info
     const heatMapData = reports
       .filter(report => report.latitude && report.longitude)
       .map(report => ({
@@ -130,6 +136,12 @@ export default function SmcDashboard() {
         location: report.location || 'Unknown Location',
         status: report.status,
         type: report.category,
+        category: report.category, // Add category for filtering
+        department: report.department, // Add department info
+        reportId: report.id, // Add report ID for linking
+        imageUrl: report.imageUrl, // Add image URL
+        description: report.description, // Add description
+        priority: report.priority, // Add priority
         date: new Date(report.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
         count: 1,
       }));
@@ -171,6 +183,37 @@ export default function SmcDashboard() {
       locationStats,
     };
   }, [reports]);
+  const uniqueCategories = useMemo(() => {
+    if (!reports) return [];
+    const cats = new Set(reports.map(r => r.category).filter(Boolean) as string[]);
+    return Array.from(cats).sort();
+  }, [reports]);
+
+  const uniqueStatuses = useMemo(() => {
+    if (!reports) return [];
+    const stats = new Set(reports.map(r => r.status).filter(Boolean) as string[]);
+    return Array.from(stats).sort();
+  }, [reports]);
+
+  // Toggle category filter
+  const toggleCategory = (category: string) => {
+    setSelectedCategories(prev => 
+      prev.includes(category) ? prev.filter(c => c !== category) : [...prev, category]
+    );
+  };
+
+  // Toggle status filter
+  const toggleStatus = (status: string) => {
+    setSelectedStatuses(prev => 
+      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
+    );
+  };
+
+  // Clear all filters
+  const clearAllFilters = () => {
+    setSelectedCategories([]);
+    setSelectedStatuses([]);
+  };
 
   // Calculate percentage change (mock data for demo)
   const pendingChange = stats.pending > 0 ? '+12%' : '0%';
@@ -295,18 +338,112 @@ export default function SmcDashboard() {
             </Badge>
           </div>
         </CardHeader>
+
+        {/* Map Filters */}
+        <div className="border-b bg-white/50 p-4 backdrop-blur-sm">
+          <div className="space-y-3">
+            {/* Category Filter */}
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <label className="text-sm font-medium text-muted-foreground">
+                  Filter by Category
+                </label>
+                {selectedCategories.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {selectedCategories.length} selected
+                  </Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {uniqueCategories.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">No categories available</span>
+                ) : (
+                  uniqueCategories.map(category => (
+                    <Button
+                      key={category}
+                      onClick={() => toggleCategory(category)}
+                      variant={selectedCategories.includes(category) ? 'default' : 'outline'}
+                      size="sm"
+                      className="text-xs"
+                    >
+                      {category}
+                    </Button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Status Filter */}
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <label className="text-sm font-medium text-muted-foreground">
+                  Filter by Status
+                </label>
+                {selectedStatuses.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {selectedStatuses.length} selected
+                  </Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {uniqueStatuses.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">No statuses available</span>
+                ) : (
+                  uniqueStatuses.map(status => (
+                    <Button
+                      key={status}
+                      onClick={() => toggleStatus(status)}
+                      variant={selectedStatuses.includes(status) ? 'default' : 'outline'}
+                      size="sm"
+                      className="text-xs"
+                    >
+                      <div
+                        className="mr-1.5 h-2 w-2 rounded-full"
+                        style={{
+                          backgroundColor:
+                            status === 'Resolved' ? '#22c55e' :
+                            status === 'In Progress' ? '#f59e0b' :
+                            status === 'Assigned' ? '#f97316' :
+                            status === 'Under Verification' ? '#eab308' :
+                            status === 'Submitted' ? '#3b82f6' :
+                            '#ef4444'
+                        }}
+                      />
+                      {status}
+                    </Button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Clear Filters Button */}
+            {(selectedCategories.length > 0 || selectedStatuses.length > 0) && (
+              <div className="pt-2">
+                <Button
+                  onClick={clearAllFilters}
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <X className="mr-1 h-3 w-3" />
+                  Clear All Filters
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+
         <CardContent className="p-0">
           {isLoading ? (
             <Skeleton className="h-[420px] w-full md:h-[440px]" />
           ) : (
             <div className="h-[420px] md:h-[440px]">
               <HeatMap 
-                data={stats.heatMapData.map(point => ({
-                  lat: point.lat,
-                  lng: point.lng,
-                  count: point.count,
-                  location: point.location,
-                }))}
+                data={stats.heatMapData}
+                selectedCategories={selectedCategories}
+                selectedStatuses={selectedStatuses}
               />
             </div>
           )}
@@ -542,6 +679,14 @@ export default function SmcDashboard() {
                 ))}
               </TableBody>
             </Table>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <Button asChild variant="outline" size="sm" className="gap-1">
+                <Link href="/smc/complaints">
+                  View More
+                  <ArrowUpRight className="h-4 w-4" />
+                </Link>
+              </Button>
             </div>
           </CardContent>
         </Card>

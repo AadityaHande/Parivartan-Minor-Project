@@ -2,19 +2,16 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ClipboardList, History, LayoutDashboard, Sparkles, User } from 'lucide-react';
+import { ClipboardList, LayoutDashboard, User } from 'lucide-react';
 
 import AuthGuard from '@/components/auth-guard';
 import WorkerHeader from '@/components/worker-header';
 import { PWAInstallBanner } from '@/components/pwa-install-button';
 import { cn } from '@/lib/utils';
-import GoogleTranslate from '@/components/GoogleTranslate';
 
 const bottomNavItems = [
   { href: '/worker/dashboard', label: 'Home', icon: <LayoutDashboard className="h-5 w-5" /> },
   { href: '/worker/task', label: 'Tasks', icon: <ClipboardList className="h-5 w-5" /> },
-  { href: '/worker/open-tasks', label: 'Open', icon: <Sparkles className="h-5 w-5" /> },
-  { href: '/worker/history', label: 'History', icon: <History className="h-5 w-5" /> },
   { href: '/worker/profile', label: 'Profile', icon: <User className="h-5 w-5" /> },
 ];
 
@@ -25,14 +22,13 @@ export default function WorkerLayout({ children }: { children: React.ReactNode }
   return (
     <AuthGuard loginPath="/worker/login" allowedRoles={['worker']} publicPaths={['/worker/login']}>
       <div className="flex min-h-screen w-full flex-col">
-        <GoogleTranslate />
         <WorkerHeader />
         <main className="flex flex-1 flex-col gap-4 bg-muted/40 p-4 pb-24 md:gap-6 md:p-6 md:pb-6">{children}</main>
 
         <PWAInstallBanner variant="worker" />
 
         <div className="fixed bottom-0 left-0 z-50 w-full border-t bg-background/95 shadow-lg backdrop-blur-md md:hidden">
-          <div className="mx-auto grid h-16 max-w-md grid-cols-5 items-center px-1">
+          <div className="mx-auto grid h-16 max-w-md grid-cols-3 items-center px-1">
             {bottomNavItems.map((item) => {
               const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
 
