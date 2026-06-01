@@ -18,13 +18,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { User as UserType } from '@/lib/types';
-<<<<<<< HEAD
 import { NotificationToggleRow } from '@/components/push-notification-prompt';
 import LanguageSelector from '@/components/translation/language-selector';
 import { Star, ShieldCheck, Globe, Bell, Mail, User as UserIcon } from 'lucide-react';
-=======
-import LanguageSelector from '@/components/translation/language-selector';
->>>>>>> f655c3e (Save local changes before pull)
 
 const profileSchema = z.object({
   displayName: z.string().min(2, 'Name must be at least 2 characters.'),

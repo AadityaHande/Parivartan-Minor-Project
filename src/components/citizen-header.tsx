@@ -185,10 +185,6 @@ export default function CitizenHeader() {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-<<<<<<< HEAD
-
-=======
->>>>>>> f655c3e (Save local changes before pull)
         </div>
       </div>
     </header>
