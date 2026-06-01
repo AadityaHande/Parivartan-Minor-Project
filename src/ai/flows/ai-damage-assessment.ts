@@ -16,6 +16,7 @@ export type AIDamageAssessmentOutput = {
   severity: 'Low' | 'Medium' | 'High';
   verificationSuggestion: 'Likely genuine' | 'Needs manual verification';
   description: string;
+<<<<<<< HEAD
   suggestedDepartment:
     | 'Engineering'
     | 'Sanitation'
@@ -25,6 +26,9 @@ export type AIDamageAssessmentOutput = {
     | 'Traffic & Roads'
     | 'Public Works'
     | 'Unassigned';
+=======
+  suggestedDepartment: 'Engineering' | 'Water Supply' | 'Drainage' | 'Electricity' | 'Traffic' | 'Unassigned';
+>>>>>>> f655c3e (Save local changes before pull)
   suggestedPriority: 'Low' | 'Medium' | 'High' | 'Critical';
   duplicateSuggestion: string;
 };
@@ -92,9 +96,15 @@ CRITICAL RULE: If you see garbage or waste material → category MUST be "Garbag
 
 DEPARTMENT MAPPING:
 - Pothole / Crack / Surface failure → Engineering
+<<<<<<< HEAD
 - Water-logged damage → Water Supply
 - Garbage/Debris → Sanitation
 - Streetlight Issue → Electrical
+=======
+- Water-logged damage → Drainage
+- Garbage/Debris → Traffic
+- Streetlight Issue → Electricity
+>>>>>>> f655c3e (Save local changes before pull)
 - Unsure → Unassigned
 
 Respond ONLY with a valid JSON object. No markdown, no backticks, no explanation — just the raw JSON:
@@ -104,7 +114,11 @@ Respond ONLY with a valid JSON object. No markdown, no backticks, no explanation
   "severity": "Low" | "Medium" | "High",
   "verificationSuggestion": "Likely genuine" | "Needs manual verification",
   "description": "2-5 sentences: what you see, its extent, public impact, and urgency",
+<<<<<<< HEAD
   "suggestedDepartment": "Engineering" | "Sanitation" | "Electrical" | "Water Supply" | "Parks & Environment" | "Traffic & Roads" | "Public Works" | "Unassigned",
+=======
+  "suggestedDepartment": "Engineering" | "Water Supply" | "Drainage" | "Electricity" | "Traffic" | "Unassigned",
+>>>>>>> f655c3e (Save local changes before pull)
   "suggestedPriority": "Low" | "Medium" | "High" | "Critical",
   "duplicateSuggestion": "brief note on duplicate likelihood"
 }`,
@@ -130,7 +144,11 @@ Respond ONLY with a valid JSON object. No markdown, no backticks, no explanation
 
     // Validate each field with safe fallbacks
     const validCategories = ['Pothole', 'Crack', 'Surface failure', 'Water-logged damage', 'Garbage/Debris', 'Streetlight Issue', 'None'];
+<<<<<<< HEAD
     const validDepts     = ['Engineering', 'Sanitation', 'Electrical', 'Water Supply', 'Parks & Environment', 'Traffic & Roads', 'Public Works', 'Unassigned'];
+=======
+    const validDepts     = ['Engineering', 'Water Supply', 'Drainage', 'Electricity', 'Traffic', 'Unassigned'];
+>>>>>>> f655c3e (Save local changes before pull)
     const validSeverities = ['Low', 'Medium', 'High'];
     const validPriorities = ['Low', 'Medium', 'High', 'Critical'];
 

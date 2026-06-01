@@ -12,7 +12,6 @@ import { useUser, useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import { doc } from 'firebase/firestore';
 import type { User as UserProfile } from '@/lib/types';
-import LanguageSelector from '@/components/translation/language-selector';
 import GoogleTranslate from '@/components/GoogleTranslate';
 
 const featureCards = [
@@ -135,7 +134,6 @@ export default function LandingPage() {
             </Link>
           </nav>
           <div className="flex items-center gap-2">
-            <LanguageSelector />
             <Button onClick={scrollToPortals} className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 shadow-md">
               Get Started
             </Button>

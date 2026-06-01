@@ -4,7 +4,6 @@ import { navItems } from '@/lib/nav-items';
 import UserNav from './user-nav';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import LanguageSelector from '@/components/translation/language-selector';
 
 export default function SiteHeader() {
   const pathname = usePathname();
@@ -38,7 +37,6 @@ export default function SiteHeader() {
         {/* Right side: UserNav, pushed to the end by justify-between */}
         <div className="flex items-center gap-3">
           <UserNav />
-          <LanguageSelector className="hidden sm:inline-flex" />
         </div>
       </div>
     </header>

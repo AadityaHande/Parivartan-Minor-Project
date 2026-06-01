@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Bell, Shield, Settings, Users, Building, Clock } from 'lucide-react';
 import { departments, departmentConfig } from '@/lib/constants';
+import LanguageSelector from '@/components/translation/language-selector';
 
 export default function SmcSettingsPage() {
     return (
@@ -87,6 +88,16 @@ export default function SmcSettingsPage() {
                         <CardFooter>
                             <Button>Save Changes</Button>
                         </CardFooter>
+                    </Card>
+
+                    <Card className="mt-6">
+                        <CardHeader>
+                            <CardTitle>Language</CardTitle>
+                            <CardDescription>Select your preferred app language.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <LanguageSelector />
+                        </CardContent>
                     </Card>
                 </TabsContent>
 
